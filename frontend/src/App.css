@@ -792,3 +792,401 @@ main {
     transform: rotate(-22deg);
   }
 }
+
+.main-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.main-nav-link {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: white;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  opacity: 0.85;
+  padding: 4px 2px;
+}
+
+.main-nav-link:hover,
+.main-nav-link--active {
+  opacity: 1;
+}
+
+.main-nav-link--active {
+  border-bottom-color: white;
+}
+
+.main-nav-link:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+.page {
+  padding: 32px 0 60px;
+}
+
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 8px;
+}
+
+.page-toolbar h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--ink);
+}
+
+.page-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-empty {
+  padding: 48px 0;
+  text-align: center;
+}
+
+.page .results {
+  padding-top: 24px;
+}
+
+.detail-view select,
+.detail-view input[type='date'],
+.detail-view input[type='text'],
+.detail-view textarea,
+.page select,
+.page input[type='text'] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  max-width: 100%;
+  padding: 8px 10px;
+}
+
+.detail-view textarea {
+  box-sizing: border-box;
+  resize: vertical;
+  width: 100%;
+}
+
+.detail-view select:focus-visible,
+.detail-view input:focus-visible,
+.detail-view textarea:focus-visible,
+.page select:focus-visible,
+.page input:focus-visible {
+  border-color: var(--green-600);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+  outline: none;
+}
+
+.log-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.log-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.log-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.log-field label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 9px 16px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.primary-btn {
+  background: var(--green-600);
+  border: 1px solid var(--green-600);
+  color: white;
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: var(--green-700);
+}
+
+.secondary-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+
+.secondary-btn:hover:not(:disabled) {
+  border-color: var(--green-600);
+}
+
+.danger-btn {
+  background: #b91c1c;
+  border: 1px solid #b91c1c;
+  color: white;
+}
+
+.primary-btn:disabled,
+.secondary-btn:disabled,
+.danger-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.confirm-text {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.save-message {
+  color: var(--green-700);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+:root[data-theme='dark'] .save-message,
+:root[data-theme='dark'] .my-rating {
+  color: var(--green-500);
+}
+
+.shelf-picker {
+  margin-bottom: 28px;
+}
+
+.shelf-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.shelf-options label {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.9rem;
+  gap: 8px;
+  padding: 6px 14px;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.season-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.season-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.season-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.my-rating {
+  margin: 4px 0 0;
+  color: var(--green-700);
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shelf-card {
+  background: var(--surface);
+  border: none;
+  border-radius: var(--card-radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.shelf-card:hover {
+  box-shadow: 0 12px 24px rgba(21, 128, 61, 0.18);
+  transform: translateY(-4px);
+}
+
+.shelf-card:focus-visible {
+  outline: 2px solid var(--green-600);
+  outline-offset: 2px;
+}
+
+.shelf-cover {
+  aspect-ratio: 1 / 1;
+  background: var(--surface-tint);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  overflow: hidden;
+  width: 100%;
+}
+
+.shelf-cover img {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  width: 100%;
+}
+
+.shelf-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px 16px;
+}
+
+.shelf-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.shelf-item {
+  align-items: center;
+  background: var(--surface);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+}
+
+.shelf-item--drop-target {
+  border-color: var(--green-600);
+}
+
+.shelf-item-number {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-width: 1.5em;
+  text-align: right;
+}
+
+.shelf-item-poster {
+  border-radius: 6px;
+  height: 66px;
+  object-fit: cover;
+  width: 44px;
+}
+
+.shelf-item-poster--empty {
+  background: var(--surface-tint);
+}
+
+.shelf-item-title {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  font: inherit;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px;
+  text-align: left;
+}
+
+.shelf-item-title:hover .season-name {
+  color: var(--green-700);
+}
+
+.shelf-item .my-rating {
+  margin: 0;
+}
+
+.shelf-item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  height: 34px;
+  width: 34px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  border-color: var(--green-600);
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}

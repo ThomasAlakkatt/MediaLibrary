@@ -24,6 +24,7 @@ export default function MusicSearch() {
   const artistDebounceRef = useRef(null);
   const releaseDebounceRef = useRef(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const isMounted = useRef(true);
 
   function handleClearSearch() {
     setArtistName('');
@@ -40,7 +41,16 @@ export default function MusicSearch() {
     window.history.replaceState(null, '', window.location.pathname);
   }
 
+  // A search still running when this page closes must not rewrite the URL of the page that replaced it.
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   function updateShareableUrl(searchArtist, searchRelease) {
+    if (!isMounted.current) return;
     const params = new URLSearchParams();
     if (searchArtist.trim()) params.set('artist', searchArtist.trim());
     if (searchRelease.trim()) params.set('release', searchRelease.trim());

@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import './App.css';
+import LibraryView from './LibraryView';
 import MediaSearch from './MediaSearch';
 import MusicSearch from './MusicSearch';
+import ShelvesView from './ShelvesView';
+
+const VIEWS = [
+  { id: 'search', label: 'Search' },
+  { id: 'library', label: 'My Library' },
+  { id: 'shelves', label: 'Shelves' },
+];
 
 const TABS = [
   { id: 'all', label: 'Movies & Shows' },
@@ -24,9 +32,43 @@ function getInitialTab() {
   return type === 'movie' || type === 'tv' ? type : 'all';
 }
 
+function getViewFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get('view');
+  return {
+    view: view === 'library' || view === 'shelves' ? view : 'search',
+    shelfId: view === 'shelves' ? Number(params.get('shelf')) || null : null,
+  };
+}
+
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
   const [tab, setTab] = useState(getInitialTab);
+  const [{ view, shelfId }, setLocation] = useState(getViewFromUrl);
+
+  // Keeps the page in step with the browser's back and forward buttons.
+  useEffect(() => {
+    function handlePopState() {
+      setLocation(getViewFromUrl());
+      setTab(getInitialTab());
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  function navigate(newView, newShelfId = null) {
+    const params = new URLSearchParams();
+    if (newView !== 'search') params.set('view', newView);
+    if (newShelfId) params.set('shelf', newShelfId);
+    const queryString = params.toString();
+    window.history.pushState(
+      null,
+      '',
+      queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname
+    );
+    setLocation({ view: newView, shelfId: newShelfId });
+    window.scrollTo?.(0, 0);
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -58,22 +100,44 @@ export default function App() {
         </button>
         <h1>MediaLibrary</h1>
         <p>Your books, shows, movies, and music, all in one place</p>
-        <div className="search-tabs" role="tablist" aria-label="What to search">
-          {TABS.map(({ id, label }) => (
+        <nav className="main-nav" aria-label="Main">
+          {VIEWS.map(({ id, label }) => (
             <button
               key={id}
               type="button"
-              role="tab"
-              aria-selected={tab === id}
-              className={`search-tab${tab === id ? ' search-tab--active' : ''}`}
-              onClick={() => handleTabChange(id)}
+              aria-current={view === id ? 'page' : undefined}
+              className={`main-nav-link${view === id ? ' main-nav-link--active' : ''}`}
+              onClick={() => navigate(id)}
             >
               {label}
             </button>
           ))}
-        </div>
+        </nav>
+        {view === 'search' && (
+          <div className="search-tabs" role="tablist" aria-label="What to search">
+            {TABS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                className={`search-tab${tab === id ? ' search-tab--active' : ''}`}
+                onClick={() => handleTabChange(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
-      <main>{tab === 'music' ? <MusicSearch /> : <MediaSearch type={tab} />}</main>
+      <main>
+        {view === 'search' &&
+          (tab === 'music' ? <MusicSearch /> : <MediaSearch type={tab} />)}
+        {view === 'library' && <LibraryView />}
+        {view === 'shelves' && (
+          <ShelvesView shelfId={shelfId} onOpenShelf={(id) => navigate('shelves', id)} />
+        )}
+      </main>
     </div>
   );
 }
