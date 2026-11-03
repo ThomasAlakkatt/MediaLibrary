@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
@@ -9,7 +11,8 @@ from music_service import (
     search_releases,
     release_details,
 )
-from movie_service import TMDBUnavailable, get_movies_by_genres
+from movie_service import get_movies_by_genres
+from tmdb_service import ShowNotFound, TMDBUnavailable, get_show_details, search_media
 
 # CORS is needed so that when I run my frontend and FastAPI on localhost from two different origins. CORS allows the frontend to make
 # these API calls to my app.py file
@@ -56,6 +59,11 @@ def tmdb_unavailable(request, exc):
     )
 
 
+@app.exception_handler(ShowNotFound)
+def show_not_found(request, exc):
+    return JSONResponse(status_code=404, content={"detail": "Could not find that show."})
+
+
 # Each route in here is an API endpoint
 
 
@@ -65,6 +73,24 @@ def search(artist: str, title: str, page: int = Query(1, ge=1)):
     if not artist.strip() and not title.strip():
         raise HTTPException(status_code=400, detail="Please enter an artist and/or a release title.")
     return search_releases(artist, title, number_of_results=10, page_number=page)
+
+
+# Searches movies and shows by title. TMDB doesn't serve pages past 500.
+@app.get("/search/media")
+def search_movies_and_shows(
+    query: str,
+    media_type: Literal["all", "movie", "tv"] = Query("all", alias="type"),
+    page: int = Query(1, ge=1, le=500),
+):
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Please enter a title to search for.")
+    return search_media(query, media_type, page)
+
+
+# Returns a show's details that search results don't include, like its list of seasons.
+@app.get("/shows/{show_id}")
+def show_details(show_id: int):
+    return get_show_details(show_id)
 
 
 # Given a Discogs release ID, looks up that release's genres/styles and returns movie

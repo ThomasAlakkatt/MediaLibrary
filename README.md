@@ -2,7 +2,7 @@
 
 An all-in-one logger for books, shows, movies, and music.
 
-This project is at an early stage and started as a copy of an earlier project, Music2Movies. Logging isn't built yet. For now, the app searches for music with the Discogs API and recommends movies with the TMDB API.
+This project is at an early stage and started as a copy of an earlier project, Music2Movies. Logging isn't built yet. For now, the app searches for movies and shows with the TMDB API, and for music with the Discogs API. It can also recommend movies for a music release.
 
 ## API Keys
 

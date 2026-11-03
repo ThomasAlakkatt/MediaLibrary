@@ -5,16 +5,12 @@ import requests
 
 # Mapping Dictionary used for turning Discog's Genres into TMDB Genres
 from mapping import DISCOGS_TO_TMDB_GENRES, STYLE_TO_TMDB_KEYWORDS, TMDB_GENRE_NAMES
+from tmdb_service import TMDBUnavailable
 
 load_dotenv()
 myBearerToken = os.getenv("TMDB_API_READ_ACCESS_TOKEN")
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
-
-
-class TMDBUnavailable(Exception):
-    pass
-
 
 # Movie search by genre API:
 
