@@ -21,9 +21,9 @@ Without these, the backend will start but every search/recommendation request wi
 
 ## Running the App
 
-1. Create a virtual environment and install backend dependencies (from `backend/`):
+1. Create a virtual environment with Python 3.13 and install backend dependencies (from `backend/`):
    ```
-   python3 -m venv venv
+   python3.13 -m venv venv
    venv/bin/pip install -r requirements.txt
    ```
 2. Install root dependencies (from the project root): `npm install`
@@ -43,18 +43,17 @@ Run these from `frontend/`:
 
 ## Frontend Packages
 
-- @testing-library/dom
-- @testing-library/jest-dom
-- @testing-library/react
-- @testing-library/user-event
 - axios
 - react
 - react-dom
-- web-vitals
 
 ### Development
 
 - @eslint/js
+- @testing-library/dom
+- @testing-library/jest-dom
+- @testing-library/react
+- @testing-library/user-event
 - @vitejs/plugin-react
 - eslint
 - eslint-plugin-react
@@ -66,28 +65,8 @@ Run these from `frontend/`:
 
 ## Backend Packages
 
-- annotated-doc
-- annotated-types
-- anyio
-- async-timeout
-- certifi
-- charset-normalizer
-- click
-- exceptiongroup
 - fastapi
-- h11
-- idna
-- oauthlib
-- pydantic
-- pydantic_core
-- python-dateutil
 - python-dotenv
 - python3-discogs-client
-- redis
 - requests
-- six
-- starlette
-- typing-inspection
-- typing_extensions
-- urllib3
 - uvicorn
