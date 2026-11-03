@@ -1,0 +1,13 @@
+{
+  "name": "medialibrary",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "backend": "cd backend && venv/bin/uvicorn app:app --reload --port 8000",
+    "frontend": "cd frontend && npm start",
+    "dev": "concurrently \"npm:backend\" \"npm:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
