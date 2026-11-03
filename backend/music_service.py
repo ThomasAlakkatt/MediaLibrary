@@ -115,15 +115,28 @@ def search_releases(
     if not artist_name and not releaseTitle:
         return []
 
+    return _search_masters(
+        [],
+        {"artist": artist_name, "release_title": releaseTitle, "type": music_type},
+        number_of_results,
+        page_number,
+    )
+
+
+# Searches everything Discogs knows about from a single piece of text, like "radiohead ok computer".
+def search_music_text(query, number_of_results=10, page_number=1, music_type="master"):
+    query = query.strip()
+    if not query:
+        return []
+    return _search_masters([query], {"type": music_type}, number_of_results, page_number)
+
+
+def _search_masters(query, fields, number_of_results, page_number):
     # client.search() only builds the query, the request itself is sent by .page(), so .page() has to be
     # inside the try. Page size is set on the list object because the library appends its own page and
     # per_page values to the URL, which would otherwise conflict with any passed to client.search().
     try:
-        search_results = client.search(
-            artist=artist_name,
-            release_title=releaseTitle,
-            type=music_type,
-        )
+        search_results = client.search(*query, **fields)
         search_results.per_page = number_of_results
         page_results = search_results.page(page_number)
     except HTTPError as e:

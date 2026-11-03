@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   API_URL,
-  RATING_OPTIONS,
+  INVALID_RATING_MESSAGE,
   STATUS_LABELS,
-  formatRating,
   getErrorMessage,
+  parseRating,
   posterUrl,
+  ratingText,
   titleDetails,
 } from './api';
 import { Clapperboard } from './Loaders';
@@ -35,38 +36,39 @@ function StatusSelect({ id, label, value, onChange, disabled }) {
   );
 }
 
-function RatingSelect({ id, label, value, onChange, disabled }) {
+function RatingInput({ id, label, value, onChange, onBlur, onKeyDown }) {
   return (
-    <select
-      id={id}
-      aria-label={label}
-      value={value ?? ''}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value ? Number(event.target.value) : null)}
-    >
-      <option value="">No rating</option>
-      {[...RATING_OPTIONS].reverse().map((rating) => (
-        <option key={rating} value={rating}>
-          {formatRating(rating)} / 10
-        </option>
-      ))}
-    </select>
+    <span className="rating-input">
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        aria-label={label}
+        placeholder="0–10"
+        autoComplete="off"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
+      />
+      <span className="rating-input-suffix">/ 10</span>
+    </span>
   );
 }
 
-const EMPTY_DRAFT = { status: null, rating: null, review: '', finished_on: '' };
+const EMPTY_DRAFT = { status: null, rating: '', review: '', finished_on: '' };
 
 function draftFromLog(log) {
   if (!log) return EMPTY_DRAFT;
   return {
     status: log.status,
-    rating: log.rating,
+    rating: ratingText(log.rating),
     review: log.review ?? '',
     finished_on: log.finished_on ?? '',
   };
 }
 
-function LogForm({ item, log, onSaved }) {
+function LogForm({ item, log, onSaved, onLogSubmitted }) {
   const [draft, setDraft] = useState(() => draftFromLog(log));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -74,7 +76,12 @@ function LogForm({ item, log, onSaved }) {
   const [confirmingClear, setConfirmingClear] = useState(false);
 
   const isLogged = Boolean(
-    log && (log.status || log.rating || log.review || log.finished_on || log.seasons?.length > 0)
+    log &&
+      (log.status ||
+        log.rating !== null ||
+        log.review ||
+        log.finished_on ||
+        log.seasons?.length > 0)
   );
 
   function updateDraft(changes) {
@@ -84,6 +91,12 @@ function LogForm({ item, log, onSaved }) {
 
   async function handleSave(event) {
     event.preventDefault();
+    const rating = parseRating(draft.rating);
+    if (rating === undefined) {
+      setError(INVALID_RATING_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -91,12 +104,12 @@ function LogForm({ item, log, onSaved }) {
       const response = await axios.put(`${API_URL}/library/${item.media_type}/${item.id}`, {
         ...titleDetails(item),
         status: draft.status,
-        rating: draft.rating,
+        rating,
         review: draft.review,
         finished_on: draft.finished_on || null,
       });
       onSaved(response.data);
-      setMessage('Saved');
+      onLogSubmitted();
     } catch (err) {
       setError(getErrorMessage(err, 'Something went wrong saving your log. Please try again.'));
     } finally {
@@ -134,7 +147,7 @@ function LogForm({ item, log, onSaved }) {
         </div>
         <div className="log-field">
           <label htmlFor="log-rating">My rating</label>
-          <RatingSelect
+          <RatingInput
             id="log-rating"
             value={draft.rating}
             onChange={(rating) => updateDraft({ rating })}
@@ -199,7 +212,12 @@ function LogForm({ item, log, onSaved }) {
 function SeasonRow({ item, season, seasonLog, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [ratingDraft, setRatingDraft] = useState(ratingText(seasonLog?.rating));
   const name = season.name;
+
+  useEffect(() => {
+    setRatingDraft(ratingText(seasonLog?.rating));
+  }, [seasonLog?.rating]);
 
   async function save(changes) {
     const next = {
@@ -226,6 +244,17 @@ function SeasonRow({ item, season, seasonLog, onSaved }) {
     }
   }
 
+  // Saves when leaving the box or pressing Enter, so a half-typed number isn't saved or rejected.
+  function commitRating() {
+    const rating = parseRating(ratingDraft);
+    if (rating === undefined) {
+      setError(INVALID_RATING_MESSAGE);
+      return;
+    }
+    setError(null);
+    if (rating !== (seasonLog?.rating ?? null)) save({ rating });
+  }
+
   return (
     <li className="season-row">
       <div className="season-heading">
@@ -241,11 +270,14 @@ function SeasonRow({ item, season, seasonLog, onSaved }) {
           disabled={saving}
           onChange={(status) => save({ status })}
         />
-        <RatingSelect
+        <RatingInput
           label={`${name} rating`}
-          value={seasonLog?.rating}
-          disabled={saving}
-          onChange={(rating) => save({ rating })}
+          value={ratingDraft}
+          onChange={setRatingDraft}
+          onBlur={commitRating}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commitRating();
+          }}
         />
         {seasonLog?.status === 'finished' && (
           <input
@@ -431,7 +463,12 @@ function ShelfPicker({ item, log, onLogChanged }) {
   );
 }
 
-export default function MediaDetail({ item, onBack, backLabel = '← Back to results' }) {
+export default function MediaDetail({
+  item,
+  onBack,
+  onLogSubmitted,
+  backLabel = '← Back to results',
+}) {
   const [log, setLog] = useState(null);
   const [logState, setLogState] = useState('loading');
   const [logError, setLogError] = useState(null);
@@ -504,7 +541,7 @@ export default function MediaDetail({ item, onBack, backLabel = '← Back to res
           {logState === 'error' && <p className="movie-status movie-error">{logError}</p>}
           {logState === 'ready' && (
             <>
-              <LogForm item={item} log={log} onSaved={setLog} />
+              <LogForm item={item} log={log} onSaved={setLog} onLogSubmitted={onLogSubmitted} />
               <ShelfPicker item={item} log={log} onLogChanged={setLog} />
               {item.media_type === 'tv' && (
                 <ShowSeasons item={item} log={log} onLogChanged={setLog} />

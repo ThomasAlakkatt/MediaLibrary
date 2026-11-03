@@ -3,7 +3,6 @@ import axios from 'axios';
 import {
   API_URL,
   STATUS_LABELS,
-  formatRating,
   getErrorMessage,
   libraryItemToMedia,
 } from './api';
@@ -48,6 +47,7 @@ export default function LibraryView() {
         item={libraryItemToMedia(selected)}
         backLabel="← Back to My Library"
         onBack={() => setSelected(null)}
+        onLogSubmitted={() => setSelected(null)}
       />
     );
   }
@@ -101,7 +101,7 @@ export default function LibraryView() {
               onSelect={setSelected}
             >
               {item.status && <p className="result-year">{STATUS_LABELS[item.status]}</p>}
-              {item.rating && <p className="my-rating">★ {formatRating(item.rating)} / 10</p>}
+              {item.rating !== null && <p className="my-rating">★ {item.rating} / 10</p>}
             </MediaCard>
           ))}
         </div>

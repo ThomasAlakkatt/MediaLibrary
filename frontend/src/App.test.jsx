@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { vi, test, expect, beforeEach } from 'vitest';
 import axios from 'axios';
 import App from './App';
@@ -33,25 +33,169 @@ const SHOW_DETAILS = {
   genres: ['Drama'],
   seasons: [{ season_number: 1, name: 'Season 1', episode_count: 7, year: '2008' }],
 };
+const OK_COMPUTER = { id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 };
+const SHELF = { id: 5, name: 'Favorites', description: null, item_count: 0, cover_posters: [] };
+
+function libraryItem(overrides = {}) {
+  return {
+    id: 50,
+    tmdb_id: 1,
+    media_type: 'movie',
+    title: 'Dune',
+    year: '2021',
+    overview: 'Spice.',
+    poster_path: null,
+    status: null,
+    rating: null,
+    review: null,
+    finished_on: null,
+    seasons: [],
+    shelf_ids: [],
+    ...overrides,
+  };
+}
+
+const NOT_FOUND = { response: { status: 404, data: { detail: 'Not found' } } };
 
 function searchResponse(results, page = 1, total_pages = 1) {
-  return { data: { results, page, total_pages } };
+  return { results, page, total_pages };
+}
+
+// What each GET route answers with. A test replaces only the ones it cares about. A function runs per
+// request, and an Error-like object with a response is treated as a failed request.
+let routes;
+
+function respond(route) {
+  const value = typeof route === 'function' ? route() : route;
+  if (value instanceof Promise) return value;
+  return value?.response ? Promise.reject(value) : Promise.resolve({ data: value });
+}
+
+function setRoutes(overrides) {
+  routes = { ...routes, ...overrides };
 }
 
 function search(title) {
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: title } });
-  fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+  clickSearch();
+}
+
+function clickSearch() {
+  const form = screen.getByRole('region', { name: 'search' });
+  fireEvent.click(within(form).getByRole('button', { name: 'Search' }));
+}
+
+async function openFromSearch(item) {
+  setRoutes({ search: searchResponse([item]) });
+  render(<App />);
+  search(item.title);
+  fireEvent.click(await screen.findByText(item.title));
+  return screen.findByRole('region', { name: 'title detail' });
+}
+
+function goTo(label) {
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: label }));
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
+  routes = {
+    search: searchResponse([]),
+    show: SHOW_DETAILS,
+    item: NOT_FOUND,
+    library: [],
+    shelves: [],
+    shelf: null,
+    music: [],
+    musicText: [],
+  };
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/search/media')) return respond(routes.search);
+    if (url.endsWith('/search/music')) return respond(routes.musicText);
+    if (url.includes('/movies/')) return respond(routes.recommendations);
+    if (url.includes('/shows/')) return respond(routes.show);
+    if (/\/library\/(movie|tv)\//.test(url)) return respond(routes.item);
+    if (url.endsWith('/library')) return respond(routes.library);
+    if (/\/shelves\/\d+$/.test(url)) return respond(routes.shelf);
+    if (url.endsWith('/shelves')) return respond(routes.shelves);
+    if (url.endsWith('/search')) return respond(routes.music);
+    throw new Error(`Unexpected GET ${url}`);
+  });
   window.matchMedia = () => ({ matches: false });
   window.scrollTo = () => {};
   window.history.replaceState(null, '', '/');
 });
 
+test('searches everything by default, including music', async () => {
+  setRoutes({ search: searchResponse([DUNE]), musicText: [OK_COMPUTER] });
+  render(<App />);
+  search('radiohead');
+
+  expect(await screen.findByText('OK Computer')).toBeInTheDocument();
+  expect(screen.getByText('Dune')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Music' })).toBeInTheDocument();
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/search/music'), {
+    params: { query: 'radiohead', page: 1 },
+  });
+});
+
+test('only music results still count as found', async () => {
+  setRoutes({ musicText: [OK_COMPUTER] });
+  render(<App />);
+  search('radiohead');
+
+  expect(await screen.findByText('OK Computer')).toBeInTheDocument();
+  expect(screen.queryByText('No results found.')).not.toBeInTheDocument();
+});
+
+test('a music failure still shows movies and shows', async () => {
+  setRoutes({
+    search: searchResponse([DUNE]),
+    musicText: { response: { status: 429, data: { detail: 'Rate limited by Discogs' } } },
+  });
+  render(<App />);
+  search('dune');
+
+  expect(await screen.findByText('Dune')).toBeInTheDocument();
+  expect(screen.getByText('Rate limited by Discogs')).toBeInTheDocument();
+});
+
+test('a movies and shows failure still shows music', async () => {
+  setRoutes({
+    search: { response: { status: 502, data: { detail: 'Could not reach TMDB' } } },
+    musicText: [OK_COMPUTER],
+  });
+  render(<App />);
+  search('dune');
+
+  expect(await screen.findByText('OK Computer')).toBeInTheDocument();
+  expect(screen.getByText('Could not reach TMDB')).toBeInTheDocument();
+});
+
+test('filtering to movies or shows leaves music out', async () => {
+  setRoutes({ search: searchResponse([DUNE]), musicText: [OK_COMPUTER] });
+  render(<App />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Movies' }));
+  search('dune');
+
+  await screen.findByText('Dune');
+  expect(screen.queryByText('OK Computer')).not.toBeInTheDocument();
+  expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/search/music'), expect.anything());
+});
+
+test('opening a music result shows its recommendations', async () => {
+  setRoutes({ musicText: [OK_COMPUTER], recommendations: [] });
+  render(<App />);
+  search('radiohead');
+  fireEvent.click(await screen.findByText('OK Computer'));
+
+  expect(await screen.findByText(/No movie recommendations found/)).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'Music' })).toHaveAttribute('aria-selected', 'true');
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/movies/9'));
+});
+
 test('searches movies and shows together by default', async () => {
-  axios.get.mockResolvedValue(searchResponse([DUNE, BREAKING_BAD]));
+  setRoutes({ search: searchResponse([DUNE, BREAKING_BAD]) });
   render(<App />);
   search('  dune ');
 
@@ -64,12 +208,12 @@ test('searches movies and shows together by default', async () => {
 });
 
 test('changing the filter reruns the current search', async () => {
-  axios.get.mockResolvedValue(searchResponse([DUNE, BREAKING_BAD]));
+  setRoutes({ search: searchResponse([DUNE, BREAKING_BAD]) });
   render(<App />);
   search('dune');
   await screen.findByText('Dune');
 
-  axios.get.mockResolvedValue(searchResponse([BREAKING_BAD]));
+  setRoutes({ search: searchResponse([BREAKING_BAD]) });
   fireEvent.click(screen.getByRole('tab', { name: 'Shows' }));
 
   await screen.findByText('Breaking Bad');
@@ -82,7 +226,7 @@ test('changing the filter reruns the current search', async () => {
 
 test('runs the search from a shared link', async () => {
   window.history.replaceState(null, '', '/?q=breaking&type=tv');
-  axios.get.mockResolvedValue(searchResponse([BREAKING_BAD]));
+  setRoutes({ search: searchResponse([BREAKING_BAD]) });
   render(<App />);
 
   expect(await screen.findByText('Breaking Bad')).toBeInTheDocument();
@@ -98,14 +242,13 @@ test('a blank search shows a message and sends nothing', () => {
 });
 
 test('shows when nothing was found', async () => {
-  axios.get.mockResolvedValue(searchResponse([]));
   render(<App />);
   search('zzz');
   expect(await screen.findByText('No results found.')).toBeInTheDocument();
 });
 
 test('shows the error message from the backend', async () => {
-  axios.get.mockRejectedValue({ response: { status: 502, data: { detail: 'Could not reach TMDB' } } });
+  setRoutes({ search: { response: { status: 502, data: { detail: 'Could not reach TMDB' } } } });
   render(<App />);
   search('dune');
   expect(await screen.findByText('Could not reach TMDB')).toBeInTheDocument();
@@ -113,94 +256,511 @@ test('shows the error message from the backend', async () => {
 
 test('an older response cannot overwrite a newer search', async () => {
   let resolveOld;
-  axios.get.mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)));
+  setRoutes({ search: () => new Promise((resolve) => (resolveOld = resolve)) });
   render(<App />);
   search('old');
 
-  axios.get.mockResolvedValue(searchResponse([BREAKING_BAD]));
+  setRoutes({ search: searchResponse([BREAKING_BAD]) });
   fireEvent.click(screen.getByRole('tab', { name: 'Shows' }));
   await screen.findByText('Breaking Bad');
 
-  resolveOld(searchResponse([DUNE]));
+  resolveOld({ data: searchResponse([DUNE]) });
   await new Promise((resolve) => setTimeout(resolve));
   expect(screen.queryByText('Dune')).not.toBeInTheDocument();
 });
 
+test('a search finishing after leaving the page does not change the URL', async () => {
+  let resolveOld;
+  setRoutes({ search: () => new Promise((resolve) => (resolveOld = resolve)) });
+  render(<App />);
+  search('dune');
+
+  goTo('My Library');
+  expect(window.location.search).toBe('?view=library');
+  resolveOld({ data: searchResponse([DUNE]) });
+  await new Promise((resolve) => setTimeout(resolve));
+
+  expect(window.location.search).toBe('?view=library');
+});
+
 test('pages through results', async () => {
-  axios.get.mockResolvedValue(searchResponse([DUNE], 1, 3));
+  setRoutes({ search: searchResponse([DUNE], 1, 3) });
   render(<App />);
   search('dune');
   await screen.findByText('Page 1 of 3');
   expect(screen.getByRole('button', { name: '← Previous' })).toBeDisabled();
 
-  axios.get.mockResolvedValue(searchResponse([BREAKING_BAD], 2, 3));
+  setRoutes({ search: searchResponse([BREAKING_BAD], 2, 3) });
   fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
 
   await screen.findByText('Page 2 of 3');
-  expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/search/media'), {
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/search/media'), {
     params: { query: 'dune', type: 'all', page: 2 },
   });
 });
 
 test('opening a show loads its seasons', async () => {
-  axios.get.mockResolvedValue(searchResponse([BREAKING_BAD]));
-  render(<App />);
-  search('breaking');
-  const card = await screen.findByText('Breaking Bad');
-
-  axios.get.mockResolvedValue({ data: SHOW_DETAILS });
-  fireEvent.click(card);
+  await openFromSearch(BREAKING_BAD);
 
   expect(await screen.findByText('Season 1')).toBeInTheDocument();
   expect(screen.getByText('7 episodes · 2008')).toBeInTheDocument();
   expect(screen.getByText('Ended · 1 season · 7 episodes')).toBeInTheDocument();
-  expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/shows/1'));
 });
 
-test('opening a movie shows its details without another request', async () => {
-  axios.get.mockResolvedValue(searchResponse([DUNE]));
-  render(<App />);
-  search('dune');
-  const card = await screen.findByText('Dune');
-  axios.get.mockClear();
+test('opening a movie shows its details and no seasons', async () => {
+  const detail = await openFromSearch(DUNE);
 
-  fireEvent.click(card);
-
-  const detail = screen.getByRole('region', { name: 'title detail' });
   expect(within(detail).getByText('Spice.')).toBeInTheDocument();
   expect(within(detail).getByRole('link', { name: 'View on TMDB' })).toHaveAttribute(
     'href',
     'https://www.themoviedb.org/movie/1'
   );
-  expect(axios.get).not.toHaveBeenCalled();
+  await screen.findByLabelText('My rating');
+  expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/shows/'));
 });
 
 test('reopening a show after a failed lookup tries again', async () => {
-  axios.get.mockResolvedValue(searchResponse([BREAKING_BAD]));
-  render(<App />);
-  search('breaking');
-  const card = await screen.findByText('Breaking Bad');
-
-  axios.get.mockRejectedValue({ response: { status: 502, data: { detail: 'Could not reach TMDB' } } });
-  fireEvent.click(card);
+  setRoutes({ show: { response: { status: 502, data: { detail: 'Could not reach TMDB' } } } });
+  await openFromSearch(BREAKING_BAD);
   await screen.findByText('Could not reach TMDB');
 
   fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
-  axios.get.mockResolvedValue({ data: SHOW_DETAILS });
+  setRoutes({ show: SHOW_DETAILS });
   fireEvent.click(await screen.findByText('Breaking Bad'));
 
   expect(await screen.findByText('Season 1')).toBeInTheDocument();
   expect(screen.queryByText('Could not reach TMDB')).not.toBeInTheDocument();
 });
 
+test.each([
+  ['7.3', 7.3],
+  ['0', 0],
+  ['10', 10],
+  ['.5', 0.5],
+  [' 8 ', 8],
+  ['', null],
+])('the rating %j is saved as %j', async (typed, saved) => {
+  axios.put.mockResolvedValue({ data: libraryItem({ rating: saved }) });
+  await openFromSearch(DUNE);
+
+  fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: typed } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() => expect(axios.put).toHaveBeenCalled());
+  expect(axios.put.mock.calls[0][1].rating).toBe(saved);
+});
+
+test.each(['11', '10.1', '-1', 'great', '8/10', '1e1', '.'])(
+  'the rating %j is rejected without saving',
+  async (typed) => {
+    await openFromSearch(DUNE);
+
+    fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: typed } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Rating must be a number between 0 and 10.')).toBeInTheDocument();
+    expect(axios.put).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('My rating')).toHaveValue(typed);
+  }
+);
+
+test('a rating of 0 shows as a rating, not as nothing', async () => {
+  setRoutes({ library: [libraryItem({ rating: 0 })], item: libraryItem({ rating: 0 }) });
+  render(<App />);
+  goTo('My Library');
+
+  expect(await screen.findByText('★ 0 / 10')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Dune'));
+  expect(await screen.findByLabelText('My rating')).toHaveValue('0');
+  expect(screen.getByRole('button', { name: 'Clear log' })).toBeInTheDocument();
+});
+
+test('saving a log sends a half-point rating and goes to My Library', async () => {
+  axios.put.mockResolvedValue({ data: libraryItem({ status: 'finished', rating: 8.5 }) });
+  setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
+  await openFromSearch(DUNE);
+
+  fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'finished' } });
+  fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '8.5' } });
+  fireEvent.change(screen.getByLabelText('Review'), { target: { value: 'Great' } });
+  fireEvent.change(screen.getByLabelText('Date finished'), { target: { value: '2026-11-01' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  expect(await screen.findByText('★ 8.5 / 10')).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'my library' })).toBeInTheDocument();
+  expect(window.location.search).toBe('?view=library');
+  expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/library/movie/1'), {
+    title: 'Dune',
+    year: '2021',
+    poster_path: '/dune.jpg',
+    overview: 'Spice.',
+    status: 'finished',
+    rating: 8.5,
+    review: 'Great',
+    finished_on: '2026-11-01',
+  });
+});
+
+test('an existing log fills in the form', async () => {
+  setRoutes({ item: libraryItem({ status: 'in_progress', rating: 7.5, review: 'So far so good' }) });
+  await openFromSearch(DUNE);
+
+  expect(await screen.findByLabelText('My rating')).toHaveValue('7.5');
+  expect(screen.getByLabelText('Status')).toHaveValue('in_progress');
+  expect(screen.getByLabelText('Review')).toHaveValue('So far so good');
+});
+
+test('a failed save shows the error and keeps what was typed', async () => {
+  axios.put.mockRejectedValue({ response: { status: 500, data: {} } });
+  await openFromSearch(DUNE);
+
+  fireEvent.change(await screen.findByLabelText('Review'), { target: { value: 'Keep me' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  expect(await screen.findByText(/Something went wrong saving your log/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Review')).toHaveValue('Keep me');
+  expect(window.location.search).not.toContain('view=library');
+});
+
+test('clearing a log asks first', async () => {
+  setRoutes({ item: libraryItem({ rating: 7.5 }) });
+  axios.delete.mockResolvedValue({ data: null });
+  await openFromSearch(DUNE);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Clear log' }));
+  expect(axios.delete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, clear' }));
+
+  expect(await screen.findByText('Log cleared')).toBeInTheDocument();
+  expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/library/movie/1'));
+  expect(screen.getByLabelText('My rating')).toHaveValue('');
+});
+
+test('rating a season saves when leaving the box', async () => {
+  axios.put.mockResolvedValue({
+    data: libraryItem({
+      media_type: 'tv',
+      seasons: [{ season_number: 1, status: null, rating: 9.5, finished_on: null }],
+    }),
+  });
+  await openFromSearch(BREAKING_BAD);
+
+  fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '9.5' } });
+  expect(axios.put).not.toHaveBeenCalled();
+  fireEvent.blur(screen.getByLabelText('Season 1 rating'));
+
+  await waitFor(() => expect(axios.put).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByLabelText('Season 1 rating')).toHaveValue('9.5'));
+  expect(axios.put).toHaveBeenCalledWith(
+    expect.stringContaining('/library/tv/1/seasons/1'),
+    expect.objectContaining({ title: 'Breaking Bad', rating: 9.5, status: null })
+  );
+});
+
+test('an invalid season rating is not saved', async () => {
+  await openFromSearch(BREAKING_BAD);
+  fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '12' } });
+  fireEvent.blur(screen.getByLabelText('Season 1 rating'));
+
+  expect(await screen.findByText('Rating must be a number between 0 and 10.')).toBeInTheDocument();
+  expect(axios.put).not.toHaveBeenCalled();
+});
+
+test('a season date only shows once the season is finished', async () => {
+  setRoutes({
+    item: libraryItem({
+      media_type: 'tv',
+      seasons: [{ season_number: 1, status: 'in_progress', rating: null, finished_on: null }],
+    }),
+  });
+  await openFromSearch(BREAKING_BAD);
+  await screen.findByLabelText('Season 1 status');
+  expect(screen.queryByLabelText('Season 1 date finished')).not.toBeInTheDocument();
+});
+
+test('ticking a shelf adds the title to it', async () => {
+  setRoutes({ shelves: [SHELF] });
+  axios.post.mockResolvedValue({ data: {} });
+  await openFromSearch(DUNE);
+  const checkbox = await screen.findByRole('checkbox', { name: 'Favorites' });
+
+  setRoutes({ item: libraryItem({ shelf_ids: [5] }) });
+  fireEvent.click(checkbox);
+
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).toBeChecked());
+  expect(axios.post).toHaveBeenCalledWith(
+    expect.stringContaining('/shelves/5/items'),
+    expect.objectContaining({ media_type: 'movie', tmdb_id: 1, title: 'Dune' })
+  );
+});
+
+test('unticking a shelf removes the title from it', async () => {
+  setRoutes({ shelves: [SHELF], item: libraryItem({ shelf_ids: [5] }) });
+  axios.delete.mockResolvedValue({ data: {} });
+  await openFromSearch(DUNE);
+  const checkbox = await screen.findByRole('checkbox', { name: 'Favorites' });
+  expect(checkbox).toBeChecked();
+
+  setRoutes({ item: NOT_FOUND });
+  fireEvent.click(checkbox);
+
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).not.toBeChecked());
+  expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/shelves/5/items/50'));
+});
+
+test('a new shelf can be created from a title page', async () => {
+  axios.post
+    .mockResolvedValueOnce({ data: SHELF })
+    .mockResolvedValueOnce({ data: {} });
+  await openFromSearch(DUNE);
+
+  fireEvent.change(await screen.findByLabelText('New shelf name'), { target: { value: 'Favorites' } });
+  setRoutes({ item: libraryItem({ shelf_ids: [5] }) });
+  fireEvent.click(screen.getByRole('button', { name: 'Create and add' }));
+
+  expect(await screen.findByRole('checkbox', { name: 'Favorites' })).toBeChecked();
+  expect(screen.getByLabelText('New shelf name')).toHaveValue('');
+});
+
+test('My Library lists logged titles with my rating', async () => {
+  setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
+  render(<App />);
+  goTo('My Library');
+
+  expect(await screen.findByText('Dune')).toBeInTheDocument();
+  expect(screen.getByText('Watched', { selector: 'p' })).toBeInTheDocument();
+  expect(screen.getByText('★ 8.5 / 10')).toBeInTheDocument();
+  expect(window.location.search).toBe('?view=library');
+});
+
+test('My Library filters by status', async () => {
+  render(<App />);
+  goTo('My Library');
+  await screen.findByText(/Nothing logged yet/);
+
+  fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'want' } });
+
+  await screen.findByText(/matches these filters/);
+  expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), {
+    params: { status: 'want' },
+  });
+});
+
+test('a library title opens using its TMDB id', async () => {
+  setRoutes({
+    library: [libraryItem({ id: 50, tmdb_id: 77, status: 'finished' })],
+    item: libraryItem({ id: 50, tmdb_id: 77, status: 'finished' }),
+  });
+  render(<App />);
+  goTo('My Library');
+  fireEvent.click(await screen.findByText('Dune'));
+
+  expect(await screen.findByLabelText('Status')).toHaveValue('finished');
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/library/movie/77'));
+});
+
+test('saving a log opened from My Library returns to the updated list', async () => {
+  setRoutes({
+    library: [libraryItem({ status: 'want' })],
+    item: libraryItem({ status: 'want' }),
+  });
+  axios.put.mockResolvedValue({ data: libraryItem({ status: 'finished', rating: 9 }) });
+  render(<App />);
+  goTo('My Library');
+  fireEvent.click(await screen.findByText('Dune'));
+  await screen.findByLabelText('Status');
+
+  setRoutes({ library: [libraryItem({ status: 'finished', rating: 9 })] });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  expect(await screen.findByText('★ 9 / 10')).toBeInTheDocument();
+  expect(window.location.search).toBe('?view=library');
+});
+
+test('saving a log opened from a shelf goes to My Library', async () => {
+  window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+  setRoutes({ shelf: { ...SHELF, items: [libraryItem()] } });
+  axios.put.mockResolvedValue({ data: libraryItem({ rating: 9 }) });
+  render(<App />);
+  fireEvent.click(await screen.findByText('Dune'));
+  await screen.findByLabelText('Status');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  expect(await screen.findByRole('region', { name: 'my library' })).toBeInTheDocument();
+  expect(window.location.search).toBe('?view=library');
+});
+
+test('rating a season stays on the page', async () => {
+  axios.put.mockResolvedValue({ data: libraryItem({ media_type: 'tv' }) });
+  await openFromSearch(BREAKING_BAD);
+  fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '9.5' } });
+  fireEvent.keyDown(screen.getByLabelText('Season 1 rating'), { key: 'Enter' });
+  await waitFor(() => expect(axios.put).toHaveBeenCalled());
+  expect(screen.getByRole('region', { name: 'title detail' })).toBeInTheDocument();
+});
+
+function twoItemShelf() {
+  return {
+    ...SHELF,
+    items: [
+      libraryItem({ id: 50, title: 'Dune', rating: 8.5 }),
+      libraryItem({ id: 51, tmdb_id: 2, media_type: 'tv', title: 'Breaking Bad' }),
+    ],
+  };
+}
+
+function openShelfUrl() {
+  window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+}
+
+function shownTitles() {
+  return screen.getAllByRole('listitem').map((row) => row.querySelector('.season-name').textContent);
+}
+
+test('creating a shelf opens it', async () => {
+  axios.post.mockResolvedValue({ data: SHELF });
+  setRoutes({ shelf: { ...SHELF, items: [] } });
+  render(<App />);
+  goTo('Shelves');
+
+  fireEvent.change(await screen.findByLabelText('New shelf name'), { target: { value: ' Favorites ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create shelf' }));
+
+  expect(await screen.findByText(/This shelf is empty/)).toBeInTheDocument();
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/shelves'), { name: 'Favorites' });
+  expect(window.location.search).toBe('?view=shelves&shelf=5');
+});
+
+test('a duplicate shelf name shows the reason', async () => {
+  axios.post.mockRejectedValue({
+    response: { status: 409, data: { detail: 'You already have a shelf with that name.' } },
+  });
+  render(<App />);
+  goTo('Shelves');
+
+  fireEvent.change(await screen.findByLabelText('New shelf name'), { target: { value: 'Favorites' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create shelf' }));
+
+  expect(await screen.findByText('You already have a shelf with that name.')).toBeInTheDocument();
+});
+
+test('a shelf shows movies and shows in order, and can be reordered', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: twoItemShelf() });
+  const reordered = { ...SHELF, items: [...twoItemShelf().items].reverse() };
+  axios.put.mockResolvedValue({ data: reordered });
+  render(<App />);
+
+  await screen.findByText('Dune');
+  expect(shownTitles()).toEqual(['Dune', 'Breaking Bad']);
+  expect(screen.getByRole('button', { name: 'Move Dune up' })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Move Dune down' }));
+
+  await waitFor(() => expect(shownTitles()).toEqual(['Breaking Bad', 'Dune']));
+  expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/shelves/5/order'), {
+    item_ids: [51, 50],
+  });
+});
+
+test('a shelf can be reordered by dragging', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: twoItemShelf() });
+  axios.put.mockResolvedValue({ data: { ...SHELF, items: [...twoItemShelf().items].reverse() } });
+  render(<App />);
+  await screen.findByText('Dune');
+
+  const [first, second] = screen.getAllByRole('listitem');
+  fireEvent.dragStart(second, { dataTransfer: { effectAllowed: '' } });
+  fireEvent.dragOver(first);
+  fireEvent.drop(first);
+
+  await waitFor(() => expect(shownTitles()).toEqual(['Breaking Bad', 'Dune']));
+  expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/shelves/5/order'), {
+    item_ids: [51, 50],
+  });
+});
+
+test('a failed reorder puts the shelf back', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: twoItemShelf() });
+  axios.put.mockRejectedValue({ response: { status: 500, data: {} } });
+  render(<App />);
+  await screen.findByText('Dune');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Move Dune down' }));
+
+  expect(await screen.findByText(/saving the new order/)).toBeInTheDocument();
+  expect(shownTitles()).toEqual(['Dune', 'Breaking Bad']);
+});
+
+test('removing a title from a shelf uses its library id', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: twoItemShelf() });
+  axios.delete.mockResolvedValue({ data: { ...SHELF, items: [twoItemShelf().items[1]] } });
+  render(<App />);
+  await screen.findByText('Dune');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Dune from shelf' }));
+
+  await waitFor(() => expect(screen.queryByText('Dune')).not.toBeInTheDocument());
+  expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/shelves/5/items/50'));
+});
+
+test('renaming a shelf', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: twoItemShelf() });
+  axios.patch.mockResolvedValue({ data: { ...twoItemShelf(), name: 'Best' } });
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Rename' }));
+  fireEvent.change(screen.getByLabelText('Shelf name'), { target: { value: 'Best' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+
+  expect(await screen.findByRole('heading', { name: 'Best' })).toBeInTheDocument();
+});
+
+test('deleting a shelf asks first, then returns to the list', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: twoItemShelf() });
+  axios.delete.mockResolvedValue({ data: null });
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete shelf' }));
+  expect(axios.delete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, delete' }));
+
+  expect(await screen.findByRole('button', { name: 'Create shelf' })).toBeInTheDocument();
+  expect(window.location.search).toBe('?view=shelves');
+});
+
+test('a shelf that no longer exists shows an error', async () => {
+  openShelfUrl();
+  setRoutes({ shelf: { response: { status: 404, data: { detail: 'Could not find that shelf.' } } } });
+  render(<App />);
+  expect(await screen.findByText('Could not find that shelf.')).toBeInTheDocument();
+});
+
+test('the browser back button returns to the previous page', async () => {
+  render(<App />);
+  goTo('My Library');
+  await screen.findByText(/Nothing logged yet/);
+
+  window.history.pushState(null, '', '/');
+  window.dispatchEvent(new PopStateEvent('popstate'));
+
+  expect(await screen.findByLabelText('Title')).toBeInTheDocument();
+});
+
 test('the Music filter keeps the artist and release search', async () => {
-  axios.get.mockResolvedValue({ data: [{ id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 }] });
+  setRoutes({ music: [{ id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 }] });
   render(<App />);
   fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
   expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+  clickSearch();
 
   expect(await screen.findByText('OK Computer')).toBeInTheDocument();
   expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/search$/), {
@@ -211,7 +771,7 @@ test('the Music filter keeps the artist and release search', async () => {
 
 test('a shared music link opens the Music filter', async () => {
   window.history.replaceState(null, '', '/?artist=Radiohead');
-  axios.get.mockResolvedValue({ data: [{ id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 }] });
+  setRoutes({ music: [{ id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 }] });
   render(<App />);
 
   expect(await screen.findByText('OK Computer')).toBeInTheDocument();
@@ -219,7 +779,7 @@ test('a shared music link opens the Music filter', async () => {
 });
 
 test('switching to and from Music clears the shared link', async () => {
-  axios.get.mockResolvedValue(searchResponse([DUNE]));
+  setRoutes({ search: searchResponse([DUNE]) });
   render(<App />);
   search('dune');
   await screen.findByText('Dune');

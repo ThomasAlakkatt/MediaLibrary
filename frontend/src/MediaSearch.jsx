@@ -5,7 +5,7 @@ import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
 import MediaDetail from './MediaDetail';
 
-const SEARCH_LABELS = { all: 'movies and shows', movie: 'movies', tv: 'shows' };
+const SEARCH_LABELS = { all: 'movies, shows and music', movie: 'movies', tv: 'shows' };
 
 function updateShareableUrl(query, type) {
   const params = new URLSearchParams();
@@ -20,11 +20,13 @@ function updateShareableUrl(query, type) {
 }
 
 // Searches movies and shows by title. type is "all", "movie" or "tv".
-export default function MediaSearch({ type }) {
+export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
   const [initialQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [results, setResults] = useState([]);
+  const [musicResults, setMusicResults] = useState([]);
+  const [musicError, setMusicError] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -42,21 +44,42 @@ export default function MediaSearch({ type }) {
     setError(null);
     setSubmittedQuery(searchQuery);
 
+    setMusicError(null);
+
+    // Music comes from a different service when searching everything, so if one fails the other's
+    // results still show.
+    const mediaRequest = axios
+      .get(`${API_URL}/search/media`, { params: { query: searchQuery, type, page: searchPage } })
+      .then((response) => ({ data: response.data }))
+      .catch((err) => ({ err }));
+    const musicRequest =
+      type === 'all'
+        ? axios
+            .get(`${API_URL}/search/music`, { params: { query: searchQuery, page: searchPage } })
+            .then((response) => ({ data: response.data }))
+            .catch((err) => ({ err }))
+        : Promise.resolve({ data: [] });
+
     try {
-      const response = await axios.get(`${API_URL}/search/media`, {
-        params: { query: searchQuery, type, page: searchPage },
-      });
+      const [media, music] = await Promise.all([mediaRequest, musicRequest]);
       if (requestId !== latestRequest.current) return;
-      setResults(response.data.results);
-      setPage(response.data.page);
-      setTotalPages(response.data.total_pages);
-      setHasResponse(true);
-      updateShareableUrl(searchQuery, type);
-    } catch (err) {
-      if (requestId !== latestRequest.current) return;
-      setError(getErrorMessage(err, 'Something went wrong while searching. Please try again.'));
-      setResults([]);
-      setTotalPages(0);
+
+      if (media.err) {
+        setError(getErrorMessage(media.err, 'Something went wrong while searching. Please try again.'));
+        setResults([]);
+        setTotalPages(0);
+      } else {
+        setResults(media.data.results);
+        setPage(media.data.page);
+        setTotalPages(media.data.total_pages);
+        setHasResponse(true);
+        updateShareableUrl(searchQuery, type);
+      }
+
+      setMusicResults(music.data ?? []);
+      if (music.err) {
+        setMusicError(getErrorMessage(music.err, 'Something went wrong searching music.'));
+      }
     } finally {
       if (requestId === latestRequest.current) setLoading(false);
     }
@@ -83,6 +106,7 @@ export default function MediaSearch({ type }) {
     if (!trimmed) {
       setError('Please enter a title to search for.');
       setResults([]);
+      setMusicResults([]);
       setTotalPages(0);
       return;
     }
@@ -94,6 +118,8 @@ export default function MediaSearch({ type }) {
     setQuery('');
     setSubmittedQuery('');
     setResults([]);
+    setMusicResults([]);
+    setMusicError(null);
     setPage(1);
     setTotalPages(0);
     setLoading(false);
@@ -108,7 +134,13 @@ export default function MediaSearch({ type }) {
   }
 
   if (selected) {
-    return <MediaDetail item={selected} onBack={() => setSelected(null)} />;
+    return (
+      <MediaDetail
+        item={selected}
+        onBack={() => setSelected(null)}
+        onLogSubmitted={onLogSubmitted}
+      />
+    );
   }
 
   return (
@@ -146,8 +178,8 @@ export default function MediaSearch({ type }) {
       {!submittedQuery && !error && (
         <section className="empty-state" aria-label="getting started">
           <p className="empty-state-hint">
-            Try searching for a movie like <strong>Dune</strong>, or a show like{' '}
-            <strong>Breaking Bad</strong>.
+            Search everything at once, or pick a filter above to narrow it down. Try{' '}
+            <strong>Dune</strong> or <strong>Radiohead</strong>.
           </p>
         </section>
       )}
@@ -155,6 +187,10 @@ export default function MediaSearch({ type }) {
       {error && <p className="search-error">{error}</p>}
 
       {loading && <Clapperboard label="Searching…" />}
+
+      {!loading && results.length > 0 && type === 'all' && musicResults.length > 0 && (
+        <h2 className="results-heading">Movies &amp; Shows</h2>
+      )}
 
       {!loading && results.length > 0 && (
         <section aria-label="results" className="results">
@@ -164,7 +200,44 @@ export default function MediaSearch({ type }) {
         </section>
       )}
 
-      {!loading && !error && hasResponse && results.length === 0 && (
+      {!loading && musicResults.length > 0 && (
+        <>
+          <h2 className="results-heading">Music</h2>
+          <section aria-label="music results" className="results">
+            {musicResults.map((release) => {
+              const image = release.cover_image || release.thumb;
+              return (
+                <button
+                  type="button"
+                  className="result-card music-card"
+                  key={release.id}
+                  onClick={() => onOpenRelease(release)}
+                >
+                  {image ? (
+                    <img
+                      className="result-image"
+                      src={image}
+                      alt={`${release.title} cover art`}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="result-image result-image--placeholder">No Image</span>
+                  )}
+                  <span className="result-info">
+                    <span className="music-card-title">{release.title}</span>
+                    <span className="result-artist">{release.artists.join(', ')}</span>
+                    {release.year ? <span className="result-year">{release.year}</span> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </section>
+        </>
+      )}
+
+      {!loading && musicError && <p className="search-error">{musicError}</p>}
+
+      {!loading && !error && !musicError && hasResponse && results.length === 0 && musicResults.length === 0 && (
         <p className="search-error">No results found.</p>
       )}
 

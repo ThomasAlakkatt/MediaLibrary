@@ -13,6 +13,7 @@ from music_service import (
     ReleaseNotFound,
     search_releases,
     release_details,
+    search_music_text,
 )
 from database import init_db
 import library_service
@@ -106,8 +107,8 @@ def show_not_found(request, exc):
 
 
 def _validate_rating(rating):
-    if rating is not None and (not 0.5 <= rating <= 10 or rating * 2 != int(rating * 2)):
-        raise ValueError("Rating must be between 0.5 and 10, in steps of 0.5")
+    if rating is not None and not 0 <= rating <= 10:
+        raise ValueError("Rating must be between 0 and 10")
     return rating
 
 
@@ -175,6 +176,14 @@ def search(artist: str, title: str, page: int = Query(1, ge=1)):
     if not artist.strip() and not title.strip():
         raise HTTPException(status_code=400, detail="Please enter an artist and/or a release title.")
     return search_releases(artist, title, number_of_results=10, page_number=page)
+
+
+# Searches music from a single piece of text, for searching everything from one box.
+@app.get("/search/music")
+def search_music(query: str, page: int = Query(1, ge=1)):
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Please enter a title to search for.")
+    return search_music_text(query, number_of_results=10, page_number=page)
 
 
 # Searches movies and shows by title. TMDB doesn't serve pages past 500.

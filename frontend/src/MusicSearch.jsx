@@ -3,7 +3,8 @@ import axios from 'axios';
 import { API_URL, getErrorMessage } from './api';
 import { Clapperboard, SpinningRecord } from './Loaders';
 
-export default function MusicSearch() {
+// initialRelease opens straight to that release, for one picked from the All search.
+export default function MusicSearch({ initialRelease }) {
   const [artistName, setArtistName] = useState('');
   const [releaseTitle, setReleaseTitle] = useState('');
   const [results, setResults] = useState([]);
@@ -203,6 +204,11 @@ export default function MusicSearch() {
   function handleBackToResults() {
     setSelectedRelease(null);
   }
+
+  useEffect(() => {
+    if (initialRelease) handleReleaseClick(initialRelease);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRelease]);
 
   const selectedCacheEntry = selectedRelease ? movieCache[selectedRelease.id] : null;
   const selectedImage = selectedRelease && (selectedRelease.cover_image || selectedRelease.thumb);

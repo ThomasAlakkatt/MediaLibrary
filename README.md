@@ -2,7 +2,20 @@
 
 An all-in-one logger for books, shows, movies, and music.
 
-This project is at an early stage and started as a copy of an earlier project, Music2Movies. Logging isn't built yet. For now, the app searches for movies and shows with the TMDB API, and for music with the Discogs API. It can also recommend movies for a music release.
+This project is at an early stage and started as a copy of an earlier project, Music2Movies.
+
+- **Search:** search movies, shows and music together, or filter to one of them.
+- **Movies and shows:** search with the TMDB API, and log a status, rating, review and date finished. Shows can also be logged per season. A rating can be any number from 0 to 10.
+- **Shelves:** ordered lists that mix movies and shows, like playlists.
+- **Music:** search with the Discogs API, and get movie recommendations for a release. Music can't be logged yet.
+
+Books aren't built yet.
+
+## Your Data
+
+Your library is stored in a SQLite database at `backend/medialibrary.db`, created the first time the backend starts. Git ignores it, so it isn't included in the repo. To back up your library, copy that file while the app is stopped.
+
+To use a different database file, set `MEDIALIBRARY_DB` to its path before starting the backend.
 
 ## API Keys
 
@@ -31,6 +44,15 @@ Without these, the backend will start but every search/recommendation request wi
 4. Start both the frontend and backend together (from the project root): `npm run dev`
 
 The frontend runs at `http://localhost:3000` and the backend at `http://localhost:8000`.
+
+## Backend Tests
+
+From `backend/`, install the test tools and run the tests. They use a temporary database, so they never touch your library.
+
+```
+venv/bin/pip install -r requirements-dev.txt
+venv/bin/python -m pytest
+```
 
 ## Frontend Commands
 

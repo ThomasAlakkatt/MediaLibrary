@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_URL, formatRating, getErrorMessage, libraryItemToMedia, posterUrl } from './api';
+import { API_URL, getErrorMessage, libraryItemToMedia, posterUrl } from './api';
 import { Clapperboard } from './Loaders';
 import { TYPE_LABELS } from './MediaCard';
 import MediaDetail from './MediaDetail';
@@ -12,7 +12,7 @@ function moveItem(items, fromIndex, toIndex) {
   return reordered;
 }
 
-function ShelfPage({ shelfId, onBack }) {
+function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
   const [shelf, setShelf] = useState(null);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -96,6 +96,7 @@ function ShelfPage({ shelfId, onBack }) {
         item={libraryItemToMedia(selected)}
         backLabel={`← Back to ${shelf.name}`}
         onBack={() => setSelected(null)}
+        onLogSubmitted={onLogSubmitted}
       />
     );
   }
@@ -205,7 +206,7 @@ function ShelfPage({ shelfId, onBack }) {
                       {[TYPE_LABELS[item.media_type], item.year].filter(Boolean).join(' · ')}
                     </span>
                   </button>
-                  {item.rating && <span className="my-rating">★ {formatRating(item.rating)}</span>}
+                  {item.rating !== null && <span className="my-rating">★ {item.rating}</span>}
                   <div className="shelf-item-actions">
                     <button
                       type="button"
@@ -333,9 +334,14 @@ function ShelfList({ onOpenShelf }) {
   );
 }
 
-export default function ShelvesView({ shelfId, onOpenShelf }) {
+export default function ShelvesView({ shelfId, onOpenShelf, onLogSubmitted }) {
   return shelfId ? (
-    <ShelfPage key={shelfId} shelfId={shelfId} onBack={() => onOpenShelf(null)} />
+    <ShelfPage
+      key={shelfId}
+      shelfId={shelfId}
+      onBack={() => onOpenShelf(null)}
+      onLogSubmitted={onLogSubmitted}
+    />
   ) : (
     <ShelfList onOpenShelf={onOpenShelf} />
   );

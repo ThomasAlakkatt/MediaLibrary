@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 DUNE = {"media_type": "movie", "tmdb_id": 1, "title": "Dune", "year": "2021", "poster_path": "/d.jpg"}
@@ -29,17 +31,23 @@ def titles(shelf):
     return [item["title"] for item in shelf["items"]]
 
 
-@pytest.mark.parametrize("rating", [0.5, 1, 7.5, 8, 9.5, 10])
+@pytest.mark.parametrize("rating", [0, 0.5, 1, 7.3, 8, 9.75, 10])
 def test_valid_ratings_are_saved(client, rating):
     response = save_log(client, DUNE, rating=rating)
     assert response.status_code == 200
     assert response.json()["rating"] == rating
 
 
-@pytest.mark.parametrize("rating", [0, -1, 0.25, 7.3, 10.5, 11])
+@pytest.mark.parametrize("rating", [-1, -0.1, 10.1, 11])
 def test_invalid_ratings_are_rejected(client, rating):
     assert save_log(client, DUNE, rating=rating).status_code == 422
     assert client.get("/library").json() == []
+
+
+def test_a_rating_of_zero_counts_as_logged(client):
+    save_log(client, DUNE, rating=0)
+    assert client.get("/library/movie/1").json()["rating"] == 0
+    assert [i["title"] for i in client.get("/library").json()] == ["Dune"]
 
 
 def test_log_round_trip(client):
@@ -107,7 +115,7 @@ def test_season_logs(client):
 
 
 def test_invalid_season_rating_is_rejected(client):
-    response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 3.3})
+    response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 10.5})
     assert response.status_code == 422
 
 
@@ -272,3 +280,105 @@ def test_library_data_survives_a_restart(client):
 
     init_db()
     assert client.get("/library/movie/1").json()["rating"] == 8
+
+
+# The first version of the database, exactly as older libraries have it.
+OLD_SCHEMA = """
+CREATE TABLE library_items (
+    id INTEGER PRIMARY KEY,
+    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv')),
+    tmdb_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    year TEXT,
+    poster_path TEXT,
+    overview TEXT,
+    status TEXT CHECK (status IN ('want', 'in_progress', 'finished')),
+    rating REAL CHECK (rating BETWEEN 0.5 AND 10),
+    review TEXT,
+    finished_on TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (media_type, tmdb_id)
+);
+CREATE TABLE season_logs (
+    item_id INTEGER NOT NULL REFERENCES library_items (id) ON DELETE CASCADE,
+    season_number INTEGER NOT NULL,
+    status TEXT CHECK (status IN ('want', 'in_progress', 'finished')),
+    rating REAL CHECK (rating BETWEEN 0.5 AND 10),
+    finished_on TEXT,
+    PRIMARY KEY (item_id, season_number)
+);
+CREATE TABLE shelves (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE shelf_items (
+    shelf_id INTEGER NOT NULL REFERENCES shelves (id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES library_items (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (shelf_id, item_id)
+);
+INSERT INTO library_items (id, media_type, tmdb_id, title, status, rating, review)
+VALUES (7, 'tv', 2, 'Breaking Bad', 'finished', 9.5, 'Great');
+INSERT INTO season_logs VALUES (7, 1, 'finished', 8.5, '2026-11-01');
+INSERT INTO shelves (id, name) VALUES (3, 'Favorites');
+INSERT INTO shelf_items VALUES (3, 7, 0);
+"""
+
+
+@pytest.fixture
+def old_database(tmp_path, monkeypatch):
+    path = tmp_path / "old.db"
+    connection = sqlite3.connect(path)
+    connection.executescript(OLD_SCHEMA)
+    connection.close()
+    monkeypatch.setenv("MEDIALIBRARY_DB", str(path))
+    return path
+
+
+def upgraded_client():
+    from fastapi.testclient import TestClient
+
+    from app import app
+
+    return TestClient(app)
+
+
+def test_upgrade_keeps_everything_and_allows_new_ratings(old_database):
+    with upgraded_client() as client:
+        item = client.get("/library/tv/2").json()
+        assert (item["id"], item["rating"], item["review"]) == (7, 9.5, "Great")
+        assert item["shelf_ids"] == [3]
+        assert item["seasons"][0]["rating"] == 8.5
+        assert [i["title"] for i in client.get("/shelves/3").json()["items"]] == ["Breaking Bad"]
+
+        assert save_log(client, DUNE, rating=0).status_code == 200
+        response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 0})
+        assert response.json()["seasons"][0]["rating"] == 0
+
+
+def test_upgrade_keeps_a_copy_of_the_old_file(old_database):
+    with upgraded_client():
+        pass
+    backup = sqlite3.connect(f"{old_database}-before-rating-change")
+    assert backup.execute("SELECT rating FROM library_items").fetchone()[0] == 9.5
+    backup.close()
+
+
+def test_links_between_tables_still_work_after_upgrade(old_database):
+    with upgraded_client() as client:
+        assert client.delete("/shelves/3").status_code == 204
+        client.delete("/library/tv/2")
+        assert client.get("/library/tv/2").status_code == 404
+    connection = sqlite3.connect(old_database)
+    assert connection.execute("SELECT COUNT(*) FROM season_logs").fetchone()[0] == 0
+    connection.close()
+
+
+def test_upgrade_only_runs_once(old_database):
+    with upgraded_client() as client:
+        save_log(client, DUNE, rating=0)
+    with upgraded_client() as client:
+        assert client.get("/library/movie/1").json()["rating"] == 0

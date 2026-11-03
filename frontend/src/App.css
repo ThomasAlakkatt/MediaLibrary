@@ -1190,3 +1190,47 @@ main {
   cursor: not-allowed;
   opacity: 0.4;
 }
+
+.rating-input {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.rating-input input {
+  text-align: center;
+  width: 4.5em;
+}
+
+.rating-input-suffix {
+  color: var(--muted);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.results-heading {
+  color: var(--ink);
+  font-size: 1.25rem;
+  margin: 36px 0 -16px;
+}
+
+.music-card {
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.music-card .result-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.music-card-title {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}

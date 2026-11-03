@@ -12,11 +12,19 @@ export const STATUS_LABELS = {
   finished: 'Watched',
 };
 
-// 0.5, 1, 1.5, ... 10
-export const RATING_OPTIONS = Array.from({ length: 20 }, (_, index) => (index + 1) / 2);
+export const INVALID_RATING_MESSAGE = 'Rating must be a number between 0 and 10.';
 
-export function formatRating(rating) {
-  return Number.isInteger(rating) ? `${rating}` : rating.toFixed(1);
+// Turns what was typed into a rating. Blank means no rating, and undefined means it isn't valid.
+export function parseRating(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (!/^(\d+\.?\d*|\.\d+)$/.test(trimmed)) return undefined;
+  const rating = Number(trimmed);
+  return rating >= 0 && rating <= 10 ? rating : undefined;
+}
+
+export function ratingText(rating) {
+  return rating === null || rating === undefined ? '' : String(rating);
 }
 
 export function posterUrl(posterPath, size = 'w342') {

@@ -12,7 +12,7 @@ const VIEWS = [
 ];
 
 const TABS = [
-  { id: 'all', label: 'Movies & Shows' },
+  { id: 'all', label: 'All' },
   { id: 'movie', label: 'Movies' },
   { id: 'tv', label: 'Shows' },
   { id: 'music', label: 'Music' },
@@ -44,6 +44,7 @@ function getViewFromUrl() {
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
   const [tab, setTab] = useState(getInitialTab);
+  const [openRelease, setOpenRelease] = useState(null);
   const [{ view, shelfId }, setLocation] = useState(getViewFromUrl);
 
   // Keeps the page in step with the browser's back and forward buttons.
@@ -84,7 +85,14 @@ export default function App() {
     if (newTab === 'music' || tab === 'music') {
       window.history.replaceState(null, '', window.location.pathname);
     }
+    setOpenRelease(null);
     setTab(newTab);
+  }
+
+  function handleOpenRelease(release) {
+    window.history.replaceState(null, '', window.location.pathname);
+    setOpenRelease(release);
+    setTab('music');
   }
 
   return (
@@ -132,10 +140,22 @@ export default function App() {
       </header>
       <main>
         {view === 'search' &&
-          (tab === 'music' ? <MusicSearch /> : <MediaSearch type={tab} />)}
+          (tab === 'music' ? (
+            <MusicSearch initialRelease={openRelease} />
+          ) : (
+            <MediaSearch
+              type={tab}
+              onLogSubmitted={() => navigate('library')}
+              onOpenRelease={handleOpenRelease}
+            />
+          ))}
         {view === 'library' && <LibraryView />}
         {view === 'shelves' && (
-          <ShelvesView shelfId={shelfId} onOpenShelf={(id) => navigate('shelves', id)} />
+          <ShelvesView
+            shelfId={shelfId}
+            onOpenShelf={(id) => navigate('shelves', id)}
+            onLogSubmitted={() => navigate('library')}
+          />
         )}
       </main>
     </div>
