@@ -3,6 +3,9 @@ import os
 
 # re is the RegEx library for RegEx operations
 import re
+import time
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 
 # dotenv loads the .env file, i do import load_dotenv from here because it makes it easier to do something like
 # just load_dotenv() as opposed to dotenv.load_dotenv(). Just makes the code cleaner!
@@ -123,12 +126,121 @@ def search_releases(
     )
 
 
-# Searches everything Discogs knows about from a single piece of text, like "radiohead ok computer".
+# How many results to compare from each search. 100 is the most Discogs returns at once.
+CANDIDATES_PER_SEARCH = 100
+
+# Paging through results shouldn't spend three more Discogs requests per page, since the limit is 60
+# a minute, so the ranked list for a search is kept for a while.
+SEARCH_CACHE_SECONDS = 600
+_search_cache = {}
+
+
+# Makes names comparable by ignoring case, accents, spacing and punctuation, so "radio head" and
+# "Radiohead" match.
+def _match_key(text):
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(character for character in decomposed.casefold() if character.isalnum())
+
+
+# Discogs writes some artists with a translation and a marker, like "The Beatles = ビートルズ*".
+# A leading "The" is ignored so "beatles" finds "The Beatles".
+def _artist_keys(artist):
+    keys = set()
+    for name in artist.split(" = "):
+        name = name.strip().rstrip("*").strip()
+        keys.add(_match_key(re.sub(r"^the\s+", "", name, flags=re.IGNORECASE)))
+    return keys
+
+
+# Lower is better: the artist, then the exact title, then a title containing the search, then the rest.
+def _match_rank(release, query_key, artist_query_key):
+    if not query_key:
+        return 3
+    if any(artist_query_key in _artist_keys(artist) for artist in release["artists"]):
+        return 0
+    title_key = _match_key(release["title"])
+    if title_key == query_key:
+        return 1
+    return 2 if query_key in title_key else 3
+
+
+MATCH_LABELS = {0: "artist", 1: "title"}
+
+
+def _rank_candidates(query, candidates):
+    query_key = _match_key(query)
+    artist_query_key = _match_key(re.sub(r"^the\s+", "", query, flags=re.IGNORECASE))
+
+    ranked = []
+    seen_ids = set()
+    for release in candidates:
+        if release["id"] in seen_ids:
+            continue
+        seen_ids.add(release["id"])
+        rank = _match_rank(release, query_key, artist_query_key)
+        ranked.append((rank, release))
+
+    # The artist normally comes before the title, unless the best title match is the more popular one.
+    # Searching "abbey road" should lead with the Beatles album, not a small band called Abbey Road.
+    def best_popularity(rank):
+        return max((r["popularity"] for entry_rank, r in ranked if entry_rank == rank), default=0)
+
+    group_order = {0: 0, 1: 1, 2: 2, 3: 3}
+    if best_popularity(1) > best_popularity(0):
+        group_order = {0: 1, 1: 0, 2: 2, 3: 3}
+
+    # Within a matching group, the release the most people own comes first. Results that don't match
+    # stay in the order Discogs gave them (sorted() keeps ties in their original order).
+    ranked = sorted(
+        ranked,
+        key=lambda entry: (group_order[entry[0]], -entry[1]["popularity"] if entry[0] < 3 else 0),
+    )
+    return [{**release, "match": MATCH_LABELS.get(rank)} for rank, release in ranked]
+
+
+# Searches from a single piece of text, like "radiohead" or "radiohead ok computer". A general Discogs
+# search buries an artist's own releases under anything with their name in the title, so this also
+# searches by artist and by title, then ranks all of it.
 def search_music_text(query, number_of_results=10, page_number=1, music_type="master"):
     query = query.strip()
     if not query:
         return []
-    return _search_masters([query], {"type": music_type}, number_of_results, page_number)
+
+    cache_key = (query.casefold(), music_type)
+    cached = _search_cache.get(cache_key)
+    if cached and time.monotonic() - cached["time"] < SEARCH_CACHE_SECONDS:
+        ranked = cached["results"]
+    else:
+        searches = [
+            ([query], {"type": music_type}),
+            ([], {"artist": query, "type": music_type}),
+            ([], {"release_title": query, "type": music_type}),
+        ]
+        candidates = []
+        errors = []
+
+        def run_search(search):
+            return _search_masters(search[0], search[1], CANDIDATES_PER_SEARCH, 1)
+
+        with ThreadPoolExecutor(max_workers=len(searches)) as executor:
+            futures = [executor.submit(run_search, search) for search in searches]
+            for future in futures:
+                try:
+                    candidates.extend(future.result())
+                except (DiscogsRateLimited, DiscogsUnavailable) as e:
+                    errors.append(e)
+
+        # Partial results are still worth showing, but only a complete set is worth keeping.
+        if len(errors) == len(searches):
+            rate_limited = [e for e in errors if isinstance(e, DiscogsRateLimited)]
+            raise (rate_limited or errors)[0]
+
+        ranked = _rank_candidates(query, candidates)
+        if not errors:
+            _search_cache[cache_key] = {"time": time.monotonic(), "results": ranked}
+
+    start = (page_number - 1) * number_of_results
+    return ranked[start : start + number_of_results]
 
 
 def _search_masters(query, fields, number_of_results, page_number):
@@ -164,7 +276,9 @@ def _search_masters(query, fields, number_of_results, page_number):
             artist_names, release_title_only = parse_title(release.title)
             search_dict["title"] = release_title_only
             search_dict["artists"] = artist_names
-            search_dict["year"] = release.year
+            # Read straight from the result: release.year sends another request when a year is missing.
+            search_dict["year"] = release.data.get("year")
+            search_dict["popularity"] = (release.data.get("community") or {}).get("have") or 0
             search_dict["thumb"] = release.data.get("thumb")
             search_dict["cover_image"] = release.data.get("cover_image")
             search_list.append(search_dict)

@@ -143,6 +143,60 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
     );
   }
 
+  const mediaSection = !loading && results.length > 0 && (
+    <>
+      {type === 'all' && musicResults.length > 0 && (
+        <h2 className="results-heading">Movies &amp; Shows</h2>
+      )}
+      <section aria-label="results" className="results">
+        {results.map((item) => (
+          <MediaCard key={`${item.media_type}-${item.id}`} item={item} onSelect={handleSelect} />
+        ))}
+      </section>
+    </>
+  );
+
+  const musicSection = !loading && musicResults.length > 0 && (
+    <>
+      <h2 className="results-heading">Music</h2>
+      <section aria-label="music results" className="results">
+        {musicResults.map((release) => {
+          const image = release.cover_image || release.thumb;
+          return (
+            <button
+              type="button"
+              className="result-card music-card"
+              key={release.id}
+              onClick={() => onOpenRelease(release)}
+            >
+              {image ? (
+                <img
+                  className="result-image"
+                  src={image}
+                  alt={`${release.title} cover art`}
+                  loading="lazy"
+                />
+              ) : (
+                <span className="result-image result-image--placeholder">No Image</span>
+              )}
+              <span className="result-info">
+                <span className="music-card-title">{release.title}</span>
+                <span className="result-artist">{release.artists.join(', ')}</span>
+                {release.year ? <span className="result-year">{release.year}</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </section>
+    </>
+  );
+
+  // Music goes first when it's clearly what was searched for, unless a movie or show has that exact title.
+  const searchedTitle = submittedQuery.trim().toLowerCase();
+  const musicFirst =
+    Boolean(musicResults[0]?.match) &&
+    !results.some((item) => item.title?.trim().toLowerCase() === searchedTitle);
+
   return (
     <>
       <section aria-label="search" className="search-card">
@@ -188,52 +242,9 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
 
       {loading && <Clapperboard label="Searching…" />}
 
-      {!loading && results.length > 0 && type === 'all' && musicResults.length > 0 && (
-        <h2 className="results-heading">Movies &amp; Shows</h2>
-      )}
-
-      {!loading && results.length > 0 && (
-        <section aria-label="results" className="results">
-          {results.map((item) => (
-            <MediaCard key={`${item.media_type}-${item.id}`} item={item} onSelect={handleSelect} />
-          ))}
-        </section>
-      )}
-
-      {!loading && musicResults.length > 0 && (
-        <>
-          <h2 className="results-heading">Music</h2>
-          <section aria-label="music results" className="results">
-            {musicResults.map((release) => {
-              const image = release.cover_image || release.thumb;
-              return (
-                <button
-                  type="button"
-                  className="result-card music-card"
-                  key={release.id}
-                  onClick={() => onOpenRelease(release)}
-                >
-                  {image ? (
-                    <img
-                      className="result-image"
-                      src={image}
-                      alt={`${release.title} cover art`}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="result-image result-image--placeholder">No Image</span>
-                  )}
-                  <span className="result-info">
-                    <span className="music-card-title">{release.title}</span>
-                    <span className="result-artist">{release.artists.join(', ')}</span>
-                    {release.year ? <span className="result-year">{release.year}</span> : null}
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        </>
-      )}
+      {musicFirst && musicSection}
+      {mediaSection}
+      {!musicFirst && musicSection}
 
       {!loading && musicError && <p className="search-error">{musicError}</p>}
 

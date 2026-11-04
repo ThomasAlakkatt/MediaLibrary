@@ -139,6 +139,45 @@ test('searches everything by default, including music', async () => {
   });
 });
 
+test('music comes first when it clearly matches the search', async () => {
+  setRoutes({
+    search: searchResponse([{ ...DUNE, title: 'A Film About Radiohead' }]),
+    musicText: [{ ...OK_COMPUTER, match: 'artist' }],
+  });
+  render(<App />);
+  search('radiohead');
+  await screen.findByText('OK Computer');
+
+  const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+  expect(headings.indexOf('Music')).toBeLessThan(headings.indexOf('Movies & Shows'));
+});
+
+test('a movie with the exact title stays ahead of matching music', async () => {
+  setRoutes({
+    search: searchResponse([DUNE]),
+    musicText: [{ ...OK_COMPUTER, match: 'artist' }],
+  });
+  render(<App />);
+  search('dune');
+  await screen.findByText('OK Computer');
+
+  const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+  expect(headings.indexOf('Movies & Shows')).toBeLessThan(headings.indexOf('Music'));
+});
+
+test('music stays last when it is not a clear match', async () => {
+  setRoutes({
+    search: searchResponse([{ ...DUNE, title: 'Something' }]),
+    musicText: [{ ...OK_COMPUTER, match: null }],
+  });
+  render(<App />);
+  search('computer');
+  await screen.findByText('OK Computer');
+
+  const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+  expect(headings.indexOf('Movies & Shows')).toBeLessThan(headings.indexOf('Music'));
+});
+
 test('only music results still count as found', async () => {
   setRoutes({ musicText: [OK_COMPUTER] });
   render(<App />);
