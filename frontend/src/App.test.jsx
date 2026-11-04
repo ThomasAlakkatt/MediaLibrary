@@ -487,6 +487,72 @@ test('pages through results', async () => {
   });
 });
 
+describe('paging when music runs further than movies and shows', () => {
+  const tenReleases = (start = 1) =>
+    Array.from({ length: 10 }, (_, index) => ({
+      ...OK_COMPUTER,
+      id: start + index,
+      title: `Album ${start + index}`,
+    }));
+
+  test('a full page of music can go to the next page', async () => {
+    setRoutes({ search: searchResponse([DUNE], 1, 1), musicText: tenReleases() });
+    render(<App />);
+    search('radiohead');
+    await screen.findByText('Album 1');
+    expect(screen.getByText('Page 1')).toBeInTheDocument();
+
+    setRoutes({ search: searchResponse([], 2, 1), musicText: tenReleases(11) });
+    fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+
+    expect(await screen.findByText('Album 11')).toBeInTheDocument();
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.queryByText('Dune')).not.toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/search/music'), {
+      params: { query: 'radiohead', page: 2 },
+    });
+  });
+
+  test('a partial page of music is the last, and can go back', async () => {
+    setRoutes({ search: searchResponse([], 2, 1), musicText: [OK_COMPUTER] });
+    window.history.replaceState(null, '', '/?q=radiohead');
+    render(<App />);
+    await screen.findByText('OK Computer');
+    expect(screen.queryByRole('button', { name: 'Next →' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '← Previous' })).toBeEnabled();
+  });
+
+  test('a short search has no paging at all', async () => {
+    setRoutes({ search: searchResponse([DUNE], 1, 1), musicText: [OK_COMPUTER] });
+    render(<App />);
+    search('dune');
+    await screen.findByText('Dune');
+    expect(screen.queryByRole('button', { name: 'Next →' })).not.toBeInTheDocument();
+  });
+
+  test('going past the last page says there is no more', async () => {
+    setRoutes({ search: searchResponse([], 1, 1), musicText: tenReleases() });
+    render(<App />);
+    search('radiohead');
+    await screen.findByText('Album 1');
+
+    setRoutes({ search: searchResponse([], 2, 1), musicText: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+
+    expect(await screen.findByText('No more results.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '← Previous' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Next →' })).toBeDisabled();
+  });
+
+  test('filtered searches keep their page count', async () => {
+    setRoutes({ search: searchResponse([DUNE], 1, 3) });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Movies' }));
+    search('dune');
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+  });
+});
+
 test('opening a show loads its seasons', async () => {
   await openFromSearch(BREAKING_BAD);
 

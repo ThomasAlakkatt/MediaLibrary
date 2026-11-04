@@ -7,6 +7,9 @@ import MediaDetail from './MediaDetail';
 
 const SEARCH_LABELS = { all: 'movies, shows and music', movie: 'movies', tv: 'shows' };
 
+// The backend sends this many music results per page, so a full page means there may be more.
+const MUSIC_PAGE_SIZE = 10;
+
 function LoggedBadge({ log }) {
   const status = logStatusText(log) ?? 'Logged';
   return (
@@ -175,6 +178,10 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
     );
   }
 
+  // Music can run for more pages than movies and shows, so paging has to allow for either.
+  const moreMusic = type === 'all' && musicResults.length === MUSIC_PAGE_SIZE;
+  const musicGoesFurther = type === 'all' && (moreMusic || page > totalPages);
+
   const mediaSection = !loading && results.length > 0 && (
     <>
       {type === 'all' && musicResults.length > 0 && (
@@ -286,10 +293,10 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
       {!loading && musicError && <p className="search-error">{musicError}</p>}
 
       {!loading && !error && !musicError && hasResponse && results.length === 0 && musicResults.length === 0 && (
-        <p className="search-error">No results found.</p>
+        <p className="search-error">{page > 1 ? 'No more results.' : 'No results found.'}</p>
       )}
 
-      {!loading && !error && totalPages > 1 && (
+      {!loading && !error && (totalPages > 1 || moreMusic || page > 1) && (
         <div className="pagination">
           <button
             className="pagination-btn"
@@ -299,12 +306,12 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
             ← Previous
           </button>
           <span className="pagination-page">
-            Page {page} of {totalPages}
+            {musicGoesFurther ? `Page ${page}` : `Page ${page} of ${totalPages}`}
           </span>
           <button
             className="pagination-btn"
             onClick={() => performSearch(submittedQuery, page + 1)}
-            disabled={page >= totalPages}
+            disabled={page >= totalPages && !moreMusic}
           >
             Next →
           </button>
