@@ -173,6 +173,28 @@ def _artist_keys(artist):
 
 
 # Lower is better: the artist, then the exact title, then a title containing the search, then the rest.
+# Discogs tells different artists with the same name apart with a number, like "Dune (3)". The number is
+# removed from the name for display, so it's kept separately to stop their releases being mixed together.
+def _artist_number(full_title):
+    artist_part = full_title.partition(" - ")[0]
+    match = re.search(r"\((\d+)\)", artist_part)
+    return match.group(1) if match else ""
+
+
+# Sort values that keep each same-name artist together, starting with the best known, and otherwise put
+# the most-owned first.
+def _same_name_artist_order(releases):
+    best_by_number = {}
+    for release in releases:
+        number = release["artist_number"]
+        best_by_number[number] = max(best_by_number.get(number, 0), release["popularity"])
+    return lambda release: (
+        -best_by_number[release["artist_number"]],
+        release["artist_number"],
+        -release["popularity"],
+    )
+
+
 def _match_rank(release, query_key, artist_query_key):
     if not query_key:
         return 3
@@ -211,10 +233,15 @@ def _rank_candidates(query, candidates):
 
     # Within a matching group, the release the most people own comes first. Results that don't match
     # stay in the order Discogs gave them (sorted() keeps ties in their original order).
-    ranked = sorted(
-        ranked,
-        key=lambda entry: (group_order[entry[0]], -entry[1]["popularity"] if entry[0] < 3 else 0),
-    )
+    artist_order = _same_name_artist_order([release for rank, release in ranked if rank == 0])
+
+    def sort_key(entry):
+        rank, release = entry
+        if rank == 0:
+            return (group_order[rank], artist_order(release))
+        return (group_order[rank], (-release["popularity"] if rank < 3 else 0,))
+
+    ranked = sorted(ranked, key=sort_key)
     return [{**release, "match": MATCH_LABELS.get(rank)} for rank, release in ranked]
 
 
@@ -237,13 +264,15 @@ def _rank_field_matches(artist_name, release_title, candidates):
             title_strength = 1 if title_key in release_key else 0
         return (artist_matches, title_strength)
 
+    artist_order = _same_name_artist_order(
+        [release for release in candidates if match_strength(release)[0]]
+    )
+
     def sort_key(release):
         strength = match_strength(release)
-        return (
-            not strength[0],
-            -strength[1],
-            -release["popularity"] if any(strength) else 0,
-        )
+        if strength[0]:
+            return (False, -strength[1], artist_order(release))
+        return (True, -strength[1], (-release["popularity"] if strength[1] else 0,))
 
     return sorted(candidates, key=sort_key)
 
@@ -328,6 +357,7 @@ def _search_masters(query, fields, number_of_results, page_number, most_owned_fi
             search_dict = {}
             search_dict["id"] = release.id
             artist_names, release_title_only = parse_title(release.title)
+            search_dict["artist_number"] = _artist_number(release.title)
             search_dict["title"] = release_title_only
             search_dict["artists"] = artist_names
             # Read straight from the result: release.year sends another request when a year is missing.

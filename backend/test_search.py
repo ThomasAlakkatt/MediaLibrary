@@ -301,3 +301,42 @@ def test_music_tab_asks_for_the_most_owned_first(client, monkeypatch):
     urls = fake_discogs(monkeypatch, results=[RESULT])
     artist_search(client, artist="radiohead")
     assert "sort=have&sort_order=desc" in urls[0]
+
+
+SAME_NAME_RELEASES = [
+    release(1, "Dune (3) - Small Hit", have=100),
+    release(2, "Dune (5) - Lightning", have=242),
+    release(3, "Dune (3) - Big Hit", have=2311),
+    release(4, "Dune (6) - Universe", have=61),
+    release(5, "Dune (5) - Thunder", have=50),
+]
+
+
+@pytest.mark.parametrize(
+    "path, params",
+    [("/search/music", {"query": "dune"}), ("/search", {"artist": "dune", "title": ""})],
+)
+def test_artists_with_the_same_name_stay_together(client, monkeypatch, path, params):
+    fake_discogs(monkeypatch, results=SAME_NAME_RELEASES)
+    response = client.get(path, params=params)
+    assert [item["title"] for item in response.json()] == [
+        "Big Hit",
+        "Small Hit",
+        "Lightning",
+        "Thunder",
+        "Universe",
+    ]
+    assert {item["artists"][0] for item in response.json()} == {"Dune"}
+
+
+def test_one_artists_spellings_are_not_split_up(client, monkeypatch):
+    fake_discogs(
+        monkeypatch,
+        results=[
+            release(1, "The Beatles = ビートルズ* - Single", have=10),
+            release(2, "The Beatles - Abbey Road", have=535124),
+            release(3, "Beatles* - Live", have=500),
+        ],
+    )
+    response = artist_search(client, artist="beatles")
+    assert [item["title"] for item in response.json()] == ["Abbey Road", "Live", "Single"]
