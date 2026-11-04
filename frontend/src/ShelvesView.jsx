@@ -267,7 +267,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
             <div className="shelf-controls">
               <ListSearch
                 label="Search this shelf"
-                placeholder="Search this shelf by title or artist"
+                placeholder="Search this shelf by title, artist or author"
                 value={query}
                 onChange={(value) => {
                   setQuery(value);

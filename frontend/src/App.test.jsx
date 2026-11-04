@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { vi, test, expect, beforeEach, afterEach, describe } from 'vitest';
 import axios from 'axios';
 import App from './App';
-import { statusLabels } from './api';
+import { isDateInRange, parseUsDate, statusLabels } from './api';
 
 vi.mock('axios');
 
@@ -2472,6 +2472,241 @@ describe('books', () => {
     fireEvent.change(screen.getByLabelText('Search your library'), { target: { value: 'tolkien' } });
     expect(screen.getByText('The Hobbit')).toBeInTheDocument();
     expect(screen.queryByText('Dune')).not.toBeInTheDocument();
+  });
+});
+
+describe('date range in My Library', () => {
+  const ITEMS = [
+    libraryItem({ id: 1, source_id: 1, title: 'January', finished_sort_date: '2026-01-15', finished_date: '2026-01-15', release_date: '1999-03-31', year: '1999' }),
+    libraryItem({ id: 2, source_id: 2, title: 'March', finished_sort_date: '2026-03-01', finished_date: '2026-03-01', release_date: '2010-07-04', year: '2010' }),
+    libraryItem({ id: 3, source_id: 3, title: 'Reading Now', status: 'in_progress', finished_sort_date: '2026-11-03', finished_date: null, release_date: null, year: '2020' }),
+    libraryItem({ id: 4, source_id: 4, title: 'Planned', status: 'want', finished_sort_date: null, finished_date: null, release_date: null, year: null }),
+  ];
+
+  const type = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const shown = () => [...document.querySelectorAll('.result-info h2')].map((el) => el.textContent);
+
+  async function openLibrary(library = ITEMS) {
+    setRoutes({ library });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText(library[0].title);
+  }
+
+  test.each([
+    ['01/01/26', '12/31/26', ['January', 'March', 'Reading Now']],
+    ['01/15/26', '01/15/26', ['January']],
+    ['01/15/26', '03/01/26', ['January', 'March']],
+    ['01/16/26', '02/28/26', []],
+    ['02/01/26', '', ['March', 'Reading Now']],
+    ['', '02/01/26', ['January']],
+    ['1/15/26', '3/1/2026', ['January', 'March']],
+  ])('finished from %j to %j shows %j', async (from, to, expected) => {
+    await openLibrary();
+    type('From date', from);
+    type('To date', to);
+    expect(shown()).toEqual(expected);
+  });
+
+  test('a title with no date is left out, and something in progress counts as today', async () => {
+    await openLibrary();
+    type('From date', '11/03/26');
+    type('To date', '11/03/26');
+    expect(shown()).toEqual(['Reading Now']);
+  });
+
+  test('can filter by release date, using a year when that is all there is', async () => {
+    await openLibrary();
+    type('Date to filter by', 'release');
+    type('From date', '06/01/20');
+    type('To date', '12/31/20');
+    expect(shown()).toEqual(['Reading Now']);
+    type('From date', '01/01/99');
+    type('To date', '12/31/10');
+    expect(shown()).toEqual(['January', 'March']);
+  });
+
+  test('two-digit years work for old releases', async () => {
+    await openLibrary();
+    type('Date to filter by', 'release');
+    type('From date', '03/31/99');
+    type('To date', '03/31/99');
+    expect(shown()).toEqual(['January']);
+  });
+
+  test('filtering by release date asks for missing dates to be filled in', async () => {
+    await openLibrary();
+    expect(axios.get).toHaveBeenLastCalledWith(expect.stringMatching(/\/library$/), { params: {} });
+    type('Date to filter by', 'release');
+    type('From date', '01/01/99');
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenLastCalledWith(expect.stringMatching(/\/library$/), {
+        params: { fill_release_dates: true },
+      })
+    );
+  });
+
+  test('the start date can be the same as the end date, with no error', async () => {
+    await openLibrary();
+    type('From date', '01/15/26');
+    type('To date', '01/15/26');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('a start date after the end date is an error, and leaves the list alone', async () => {
+    await openLibrary();
+    type('From date', '03/02/26');
+    type('To date', '03/01/26');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The start date must be the same as or before the end date.'
+    );
+    expect(screen.getByLabelText('From date')).toHaveAttribute('aria-invalid', 'true');
+    expect(shown()).toHaveLength(4);
+
+    type('From date', '03/01/26');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(shown()).toEqual(['March']);
+  });
+
+  test('order is checked across years, not just by how the text reads', async () => {
+    await openLibrary();
+    type('From date', '12/31/25');
+    type('To date', '01/01/26');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    type('From date', '01/01/26');
+    type('To date', '12/31/25');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  test('half-typed dates wait until leaving the box to complain', async () => {
+    await openLibrary();
+    type('From date', '01/1');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(shown()).toHaveLength(4);
+
+    fireEvent.blur(screen.getByLabelText('From date'));
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter the start date as mm/dd/yy.');
+    expect(shown()).toHaveLength(4);
+
+    type('From date', '01/15/26');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test.each(['13/01/26', '02/30/26', '00/10/26', 'yesterday', '1-15-26', '01/15/026'])(
+    'the start date %j is rejected',
+    async (value) => {
+      await openLibrary();
+      type('From date', value);
+      fireEvent.blur(screen.getByLabelText('From date'));
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter the start date as mm/dd/yy.');
+      expect(shown()).toHaveLength(4);
+    }
+  );
+
+  test('a bad end date gets its own message', async () => {
+    await openLibrary();
+    type('To date', '02/30/26');
+    fireEvent.blur(screen.getByLabelText('To date'));
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter the end date as mm/dd/yy.');
+  });
+
+  test('a real leap day is accepted', async () => {
+    await openLibrary();
+    type('From date', '02/29/24');
+    fireEvent.blur(screen.getByLabelText('From date'));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('Clear dates shows everything again', async () => {
+    await openLibrary();
+    expect(screen.queryByRole('button', { name: 'Clear dates' })).not.toBeInTheDocument();
+    type('From date', '01/15/26');
+    type('To date', '01/15/26');
+    expect(shown()).toEqual(['January']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear dates' }));
+
+    expect(shown()).toHaveLength(4);
+    expect(screen.getByLabelText('From date')).toHaveValue('');
+  });
+
+  test('says when nothing falls in the range', async () => {
+    await openLibrary();
+    type('From date', '01/16/26');
+    type('To date', '02/28/26');
+    expect(screen.getByText('Nothing in your library falls in those dates.')).toBeInTheDocument();
+  });
+
+  test('works with search, and says so when nothing matches both', async () => {
+    await openLibrary();
+    type('From date', '01/01/26');
+    type('To date', '12/31/26');
+    type('Search your library', 'march');
+    expect(shown()).toEqual(['March']);
+    type('Search your library', 'zzz');
+    expect(screen.getByText('Nothing in your library matches “zzz” in those dates.')).toBeInTheDocument();
+  });
+
+  test('cards show the date being filtered by', async () => {
+    await openLibrary();
+    type('From date', '01/15/26');
+    type('To date', '01/15/26');
+    expect(screen.getByText('Watched Jan 15, 2026')).toBeInTheDocument();
+    type('Date to filter by', 'release');
+    type('From date', '03/31/99');
+    type('To date', '03/31/99');
+    expect(screen.getByText('Released Mar 31, 1999')).toBeInTheDocument();
+  });
+
+  test('a range is paged, starting from the first page', async () => {
+    const many = Array.from({ length: 25 }, (_, i) =>
+      libraryItem({ id: i + 1, source_id: i + 1, title: `Title ${i + 1}`, finished_sort_date: '2026-01-15', finished_date: '2026-01-15' })
+    );
+    await openLibrary(many);
+    fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+    type('From date', '01/15/26');
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+  });
+
+  describe('reading dates', () => {
+    test.each([
+      ['01/15/26', '2026-01-15'],
+      ['1/5/26', '2026-01-05'],
+      ['12/31/2025', '2025-12-31'],
+      ['02/29/24', '2024-02-29'],
+      ['01/01/37', '1937-01-01'],
+      ['  01/15/26 ', '2026-01-15'],
+      ['', null],
+      ['   ', null],
+      ['02/29/25', undefined],
+      ['13/01/26', undefined],
+      ['04/31/26', undefined],
+      ['01/15', undefined],
+      ['01/15/026', undefined],
+      ['abc', undefined],
+    ])('%j is read as %j', (text, expected) => {
+      expect(parseUsDate(text)).toBe(expected);
+    });
+
+    test('a two-digit year means the most recent one it could be', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2026, 10, 3));
+      expect(parseUsDate('01/01/26')).toBe('2026-01-01');
+      expect(parseUsDate('01/01/27')).toBe('1927-01-01');
+      vi.useRealTimers();
+    });
+
+    test.each([
+      ['2026-01-15', '2026-01-15', '2026-01-15', true],
+      ['2026-01-15', '2026-01-16', null, false],
+      ['2026-01-15', null, '2026-01-14', false],
+      ['2024', '2024-06-01', '2024-06-30', true],
+      ['2024', '2025-01-01', null, false],
+      ['2024', null, '2023-12-31', false],
+      [null, null, null, false],
+    ])('%j in %j to %j is %j', (date, from, to, expected) => {
+      expect(isDateInRange(date, from, to)).toBe(expected);
+    });
   });
 });
 

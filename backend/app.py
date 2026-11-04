@@ -260,8 +260,9 @@ def library(
     status: Optional[Status] = None,
     sort: Literal["changed", "finished", "release", "status", "rating", "title"] = "changed",
     order: Literal["desc", "asc"] = "desc",
+    fill_release_dates: bool = False,
 ):
-    return library_service.list_library(media_type, status, sort, order)
+    return library_service.list_library(media_type, status, sort, order, fill_release_dates)
 
 
 # The songs from an album that are in the library.

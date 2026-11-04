@@ -5,11 +5,14 @@ import {
   MIXED_STATUS_LABELS,
   formatDate,
   getErrorMessage,
+  isDateInRange,
   libraryItemToMedia,
   logStatusText,
+  parseUsDate,
   statusLabels,
   titleMatchesSearch,
 } from './api';
+import DateRangeFilter, { DATE_RANGE_ORDER_MESSAGE } from './DateRangeFilter';
 import ListSearch from './ListSearch';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
@@ -36,8 +39,37 @@ export default function LibraryView() {
   const [sortOption, setSortOption] = useState('changed:desc');
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState('');
-  const matchingItems = (items ?? []).filter((item) => titleMatchesSearch(query, item));
+  const [dateField, setDateField] = useState('finished');
+  const [fromText, setFromText] = useState('');
+  const [toText, setToText] = useState('');
+  // Errors about a date's format wait until leaving the box, rather than appearing mid-typing.
+  const [datesChecked, setDatesChecked] = useState(false);
+
+  const fromDate = parseUsDate(fromText);
+  const toDate = parseUsDate(toText);
+  const datesReadable = fromDate !== undefined && toDate !== undefined;
+  const datesInOrder = !fromDate || !toDate || fromDate <= toDate;
+  // A range only applies once it makes sense, so a half-typed or backwards one doesn't empty the list.
+  const rangeActive = datesReadable && datesInOrder && Boolean(fromDate || toDate);
+
+  let dateError = null;
+  if (!datesInOrder && datesReadable) dateError = DATE_RANGE_ORDER_MESSAGE;
+  else if (datesChecked && fromDate === undefined) dateError = 'Enter the start date as mm/dd/yy.';
+  else if (datesChecked && toDate === undefined) dateError = 'Enter the end date as mm/dd/yy.';
+
+  function itemDate(item) {
+    // Something still in progress counts as finishing today, like in the date sort.
+    return dateField === 'finished' ? item.finished_sort_date : item.release_date || item.year;
+  }
+
+  const matchingItems = (items ?? []).filter(
+    (item) =>
+      titleMatchesSearch(query, item) && (!rangeActive || isDateInRange(itemDate(item), fromDate, toDate))
+  );
   const pagination = usePagination(matchingItems);
+
+  // Titles logged before release dates were stored may only have a year.
+  const fillReleaseDates = dateField === 'release' && rangeActive;
 
   // Also reloads when coming back from a title's page, since its log may have changed there.
   useEffect(() => {
@@ -46,6 +78,7 @@ export default function LibraryView() {
     const params = {};
     if (mediaType) params.media_type = mediaType;
     if (status) params.status = status;
+    if (fillReleaseDates) params.fill_release_dates = true;
     if (sortOption !== 'changed:desc') {
       const [sort, order] = sortOption.split(':');
       params.sort = sort;
@@ -66,7 +99,7 @@ export default function LibraryView() {
     return () => {
       current = false;
     };
-  }, [mediaType, status, sortOption, selected]);
+  }, [mediaType, status, sortOption, selected, fillReleaseDates]);
 
   if (selected) {
     return (
@@ -81,6 +114,9 @@ export default function LibraryView() {
 
   const isFiltered = Boolean(mediaType || status);
   const sortKind = sortOption.split(':')[0];
+  // Shows the date that's being sorted or filtered by on each card.
+  const showFinishedDate = sortKind === 'finished' || (rangeActive && dateField === 'finished');
+  const showReleaseDate = sortKind === 'release' || (rangeActive && dateField === 'release');
 
   return (
     <section aria-label="my library" className="page">
@@ -136,12 +172,34 @@ export default function LibraryView() {
 
       <ListSearch
         label="Search your library"
-        placeholder="Search your library by title or artist"
+        placeholder="Search your library by title, artist or author"
         value={query}
         onChange={(value) => {
           setQuery(value);
           pagination.resetPage();
         }}
+      />
+
+      <DateRangeFilter
+        field={dateField}
+        onFieldChange={(value) => {
+          setDateField(value);
+          pagination.resetPage();
+        }}
+        from={fromText}
+        onFromChange={(value) => {
+          setFromText(value);
+          setDatesChecked(false);
+          pagination.resetPage();
+        }}
+        to={toText}
+        onToChange={(value) => {
+          setToText(value);
+          setDatesChecked(false);
+          pagination.resetPage();
+        }}
+        onBlur={() => setDatesChecked(true)}
+        error={dateError}
       />
 
       {error && <p className="search-error">{error}</p>}
@@ -154,7 +212,11 @@ export default function LibraryView() {
         </p>
       )}
       {items?.length > 0 && matchingItems.length === 0 && (
-        <p className="empty-state-hint page-empty">Nothing in your library matches “{query.trim()}”.</p>
+        <p className="empty-state-hint page-empty">
+          {query.trim()
+            ? `Nothing in your library matches “${query.trim()}”${rangeActive ? ' in those dates' : ''}.`
+            : 'Nothing in your library falls in those dates.'}
+        </p>
       )}
       {matchingItems.length > 0 && (
         <div className="results">
@@ -164,14 +226,14 @@ export default function LibraryView() {
               item={item}
               onSelect={setSelected}
             >
-              {sortKind === 'finished' && item.finished_date ? (
+              {showFinishedDate && item.finished_date ? (
                 <p className="result-year">
                   {statusLabels(item.media_type).finished} {formatDate(item.finished_date)}
                 </p>
               ) : (
                 logStatusText(item) && <p className="result-year">{logStatusText(item)}</p>
               )}
-              {sortKind === 'release' && (item.release_date || item.year) && (
+              {showReleaseDate && (item.release_date || item.year) && (
                 <p className="result-year">Released {formatDate(item.release_date || item.year)}</p>
               )}
               {item.rating !== null && <p className="my-rating">★ {item.rating} / 10</p>}

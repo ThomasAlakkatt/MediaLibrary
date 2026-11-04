@@ -80,6 +80,38 @@ export function formatDate(text) {
 }
 
 // TMDB gives a path to build an image address from, while music and books have the full address.
+// Turns mm/dd/yy into YYYY-MM-DD. Blank means no date, and undefined means it isn't a real date. A two-digit
+// year is taken as the most recent one it could be, so 26 is 2026 and 37 is 1937. Four digits also work.
+export function parseUsDate(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!match) return undefined;
+
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  let year = Number(match[3]);
+  if (match[3].length === 2) {
+    const thisYear = new Date().getFullYear();
+    year += Math.floor(thisYear / 100) * 100;
+    if (year > thisYear) year -= 100;
+  }
+
+  // A date like 02/30 rolls over to March, which shows it doesn't exist.
+  const date = new Date(year, month - 1, day);
+  if (date.getMonth() !== month - 1 || date.getDate() !== day) return undefined;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// Whether a date falls in a range, including both ends. Either end can be null for no limit, and no date
+// is never in a range. A date that's just a year counts if any of that year is in the range.
+export function isDateInRange(date, from, to) {
+  if (!date) return false;
+  const earliest = date.length === 4 ? `${date}-01-01` : date;
+  const latest = date.length === 4 ? `${date}-12-31` : date;
+  return (!from || latest >= from) && (!to || earliest <= to);
+}
+
 export function posterUrl(posterPath, size = 'w342') {
   if (posterPath.startsWith('http')) return posterPath;
   return `https://image.tmdb.org/t/p/${size}${posterPath}`;

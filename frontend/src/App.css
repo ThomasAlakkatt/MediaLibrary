@@ -1427,3 +1427,44 @@ label.track-content {
 .track-entry .log-form {
   margin-bottom: 0;
 }
+
+.date-range {
+  border: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.date-range legend {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.date-range-fields {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.date-range-fields input {
+  text-align: center;
+  width: 6.5em;
+}
+
+.date-range-fields input[aria-invalid='true'] {
+  border-color: var(--error-text);
+}
+
+.date-range-to {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.date-range .movie-status {
+  margin-top: 8px;
+}

@@ -968,3 +968,19 @@ def test_upgrade_renames_artists_to_creators_and_keeps_the_data(tmp_path, monkey
     columns = [row[1] for row in connection.execute("PRAGMA table_info(library_items)")]
     assert "creators" in columns and "artists" not in columns
     connection.close()
+
+
+def test_library_can_fill_release_dates_without_sorting_by_them(client, monkeypatch):
+    looked_up = []
+
+    def fake_lookup(media_type, source_id):
+        looked_up.append(source_id)
+        return "2021-09-15"
+
+    monkeypatch.setattr(library_service, "get_release_date", fake_lookup)
+    log_movie(client, movie(1, "Dune", year="2021"), rating=1)
+
+    assert client.get("/library").json()[0]["release_date"] is None
+    assert looked_up == []
+    filled = client.get("/library", params={"fill_release_dates": True}).json()
+    assert filled[0]["release_date"] == "2021-09-15"

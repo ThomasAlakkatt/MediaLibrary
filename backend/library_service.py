@@ -219,8 +219,8 @@ def _status_rank(item):
 
 # sort is "changed", "finished", "release", "status", "rating" or "title". order is "desc" (newest or
 # highest first) or "asc", and doesn't apply to status or title, which each have one natural order.
-def list_library(media_type=None, status=None, sort="changed", order="desc"):
-    if sort == "release":
+def list_library(media_type=None, status=None, sort="changed", order="desc", fill_release_dates=False):
+    if sort == "release" or fill_release_dates:
         _fill_missing_release_dates()
 
     filters = [IS_LOGGED_SQL]
