@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_URL, getErrorMessage, statusLabels } from './api';
+import { API_URL, getErrorMessage, logStatusText } from './api';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
 import MediaDetail from './MediaDetail';
@@ -8,7 +8,7 @@ import MediaDetail from './MediaDetail';
 const SEARCH_LABELS = { all: 'movies, shows and music', movie: 'movies', tv: 'shows' };
 
 function LoggedBadge({ log }) {
-  const status = log.status ? statusLabels(log.media_type)[log.status] : 'Logged';
+  const status = logStatusText(log) ?? 'Logged';
   return (
     <p className="logged-badge">
       ✓ {status}

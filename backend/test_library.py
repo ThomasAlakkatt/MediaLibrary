@@ -621,3 +621,33 @@ def test_upgrade_adds_release_dates_without_losing_data(old_database):
         item = client.get("/library/tv/2").json()
         assert item["release_date"] is None
         assert item["rating"] == 9.5
+
+
+def test_library_items_count_their_seasons_by_status(client):
+    url = "/library/tv/2/seasons"
+    client.put(f"{url}/1", json={**details(BB), "status": "finished"})
+    client.put(f"{url}/2", json={**details(BB), "status": "finished"})
+    client.put(f"{url}/3", json={**details(BB), "status": "in_progress"})
+    save_log(client, DUNE, rating=8)
+
+    counts = {i["title"]: i["season_counts"] for i in client.get("/library").json()}
+    assert counts["Breaking Bad"] == {"want": 0, "in_progress": 1, "finished": 2}
+    assert counts["Dune"] == {"want": 0, "in_progress": 0, "finished": 0}
+
+
+def test_status_filter_includes_shows_logged_only_by_season(client):
+    url = "/library/tv/2/seasons"
+    client.put(f"{url}/1", json={**details(BB), "status": "finished"})
+    client.put(f"{url}/2", json={**details(BB), "status": "in_progress"})
+    save_log(client, DUNE, status="want")
+
+    assert library_titles(client, status="finished") == ["Breaking Bad"]
+    assert library_titles(client, status="in_progress") == ["Breaking Bad"]
+    assert library_titles(client, status="want") == ["Dune"]
+
+
+def test_a_shows_own_status_beats_its_seasons_in_the_filter(client):
+    save_log(client, BB, status="want")
+    client.put("/library/tv/2/seasons/1", json={**details(BB), "status": "finished"})
+    assert library_titles(client, status="finished") == []
+    assert library_titles(client, status="want") == ["Breaking Bad"]

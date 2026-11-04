@@ -6,6 +6,7 @@ import {
   formatDate,
   getErrorMessage,
   libraryItemToMedia,
+  logStatusText,
   statusLabels,
 } from './api';
 import { Clapperboard } from './Loaders';
@@ -131,9 +132,7 @@ export default function LibraryView() {
                   {statusLabels(item.media_type).finished} {formatDate(item.watched_date)}
                 </p>
               ) : (
-                item.status && (
-                  <p className="result-year">{statusLabels(item.media_type)[item.status]}</p>
-                )
+                logStatusText(item) && <p className="result-year">{logStatusText(item)}</p>
               )}
               {sortKind === 'release' && (item.release_date || item.year) && (
                 <p className="result-year">Released {formatDate(item.release_date || item.year)}</p>

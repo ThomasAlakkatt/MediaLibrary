@@ -175,8 +175,13 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
         filters.append("i.media_type = ?")
         params.append(media_type)
     if status:
-        filters.append("i.status = ?")
-        params.append(status)
+        # A show logged only by season counts as having the statuses of its seasons.
+        filters.append(
+            """(i.status = ? OR (i.status IS NULL AND EXISTS (
+                SELECT 1 FROM season_logs s WHERE s.item_id = i.id AND s.status = ?
+            )))"""
+        )
+        params.extend([status, status])
 
     with get_connection() as connection:
         rows = connection.execute(
@@ -187,9 +192,17 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
             """,
             params,
         ).fetchall()
-        seasons_by_item = _load_seasons_by_item(connection) if sort == "watched" else {}
+        seasons_by_item = _load_seasons_by_item(connection)
 
     items = [dict(row) for row in rows]
+
+    # Lets a show logged only by season say something useful about itself.
+    for item in items:
+        seasons = seasons_by_item.get(item["id"], [])
+        item["season_counts"] = {
+            season_status: sum(1 for season in seasons if season["status"] == season_status)
+            for season_status in ("want", "in_progress", "finished")
+        }
 
     if sort == "watched":
         today = date.today().isoformat()

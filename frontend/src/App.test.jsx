@@ -1144,6 +1144,45 @@ describe('marking logged titles in search results', () => {
   });
 });
 
+describe('shows logged only by season', () => {
+  const show = (counts) =>
+    libraryItem({
+      media_type: 'tv',
+      title: 'Breaking Bad',
+      season_counts: { want: 0, in_progress: 0, finished: 0, ...counts },
+    });
+
+  test.each([
+    [{ finished: 1 }, 'Watched 1 season'],
+    [{ finished: 3 }, 'Watched 3 seasons'],
+    [{ finished: 2, in_progress: 1 }, 'Watching'],
+    [{ want: 2 }, 'Want to watch'],
+    [{ finished: 1, want: 2 }, 'Watched 1 season'],
+  ])('with %j the library card says %s', async (counts, text) => {
+    setRoutes({ library: [show(counts)] });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText('Breaking Bad');
+    expect(screen.getByText(text, { selector: 'p' })).toBeInTheDocument();
+  });
+
+  test('a show with its own status ignores its seasons', async () => {
+    setRoutes({ library: [{ ...show({ finished: 3 }), status: 'want' }] });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText('Breaking Bad');
+    expect(screen.getByText('Want to watch', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText(/season/, { selector: 'p' })).not.toBeInTheDocument();
+  });
+
+  test('search results use the same words', async () => {
+    setRoutes({ search: searchResponse([BREAKING_BAD]), library: [show({ finished: 2 })] });
+    render(<App />);
+    search('breaking');
+    expect(await screen.findByText('✓ Watched 2 seasons')).toBeInTheDocument();
+  });
+});
+
 test('My Library lists logged titles with my rating', async () => {
   setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
   render(<App />);

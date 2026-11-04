@@ -20,6 +20,21 @@ export function statusLabels(mediaType) {
   return STATUS_LABELS_BY_TYPE[mediaType];
 }
 
+// What to say about a title's status. A show logged only by season goes by its seasons, and this returns
+// nothing if there's no status to report.
+export function logStatusText(log) {
+  const labels = statusLabels(log.media_type);
+  if (log.status) return labels[log.status];
+
+  const counts = log.season_counts;
+  if (!counts) return null;
+  if (counts.in_progress > 0) return labels.in_progress;
+  if (counts.finished > 0) {
+    return `${labels.finished} ${counts.finished} ${counts.finished === 1 ? 'season' : 'seasons'}`;
+  }
+  return counts.want > 0 ? labels.want : null;
+}
+
 // For places that cover every kind of title at once, like the My Library filter.
 export const MIXED_STATUS_LABELS = {
   want: 'Planned',
