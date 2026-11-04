@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './App.css';
 import LibraryView from './LibraryView';
 import MediaSearch from './MediaSearch';
@@ -44,7 +44,10 @@ function getViewFromUrl() {
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
   const [tab, setTab] = useState(getInitialTab);
+  // A music result opened from the All search. The search stays mounted behind it, so coming back
+  // finds the same results, page and scroll position.
   const [openRelease, setOpenRelease] = useState(null);
+  const scrollBeforeRelease = useRef(0);
   const [{ view, shelfId }, setLocation] = useState(getViewFromUrl);
 
   // Keeps the page in step with the browser's back and forward buttons.
@@ -52,6 +55,7 @@ export default function App() {
     function handlePopState() {
       setLocation(getViewFromUrl());
       setTab(getInitialTab());
+      setOpenRelease(null);
     }
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -68,6 +72,7 @@ export default function App() {
       queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname
     );
     setLocation({ view: newView, shelfId: newShelfId });
+    setOpenRelease(null);
     window.scrollTo?.(0, 0);
   }
 
@@ -90,9 +95,15 @@ export default function App() {
   }
 
   function handleOpenRelease(release) {
-    window.history.replaceState(null, '', window.location.pathname);
+    scrollBeforeRelease.current = window.scrollY;
     setOpenRelease(release);
-    setTab('music');
+    window.scrollTo?.(0, 0);
+  }
+
+  function handleCloseRelease() {
+    setOpenRelease(null);
+    // Waits for the search to be showing again, since it can't be scrolled while hidden.
+    requestAnimationFrame(() => window.scrollTo?.(0, scrollBeforeRelease.current));
   }
 
   return (
@@ -141,13 +152,24 @@ export default function App() {
       <main>
         {view === 'search' &&
           (tab === 'music' ? (
-            <MusicSearch initialRelease={openRelease} />
+            <MusicSearch />
           ) : (
-            <MediaSearch
-              type={tab}
-              onLogSubmitted={() => navigate('library')}
-              onOpenRelease={handleOpenRelease}
-            />
+            <>
+              <div hidden={Boolean(openRelease)}>
+                <MediaSearch
+                  type={tab}
+                  onLogSubmitted={() => navigate('library')}
+                  onOpenRelease={handleOpenRelease}
+                />
+              </div>
+              {openRelease && (
+                <MusicSearch
+                  key={openRelease.id}
+                  initialRelease={openRelease}
+                  onBack={handleCloseRelease}
+                />
+              )}
+            </>
           ))}
         {view === 'library' && <LibraryView />}
         {view === 'shelves' && (

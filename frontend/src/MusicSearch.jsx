@@ -3,8 +3,9 @@ import axios from 'axios';
 import { API_URL, getErrorMessage } from './api';
 import { Clapperboard, SpinningRecord } from './Loaders';
 
-// initialRelease opens straight to that release, for one picked from the All search.
-export default function MusicSearch({ initialRelease }) {
+// initialRelease opens straight to that release, for one picked from the All search. onBack then
+// returns to that search, since there are no music results here to go back to.
+export default function MusicSearch({ initialRelease, onBack }) {
   const [artistName, setArtistName] = useState('');
   const [releaseTitle, setReleaseTitle] = useState('');
   const [results, setResults] = useState([]);
@@ -14,7 +15,7 @@ export default function MusicSearch({ initialRelease }) {
   const [page, setPage] = useState(1);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const [selectedRelease, setSelectedRelease] = useState(null);
+  const [selectedRelease, setSelectedRelease] = useState(initialRelease ?? null);
   const [movieCache, setMovieCache] = useState({});
   const [moviesLoadingId, setMoviesLoadingId] = useState(null);
 
@@ -202,7 +203,8 @@ export default function MusicSearch({ initialRelease }) {
   }
 
   function handleBackToResults() {
-    setSelectedRelease(null);
+    if (onBack) onBack();
+    else setSelectedRelease(null);
   }
 
   useEffect(() => {

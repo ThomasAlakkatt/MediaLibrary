@@ -229,8 +229,70 @@ test('opening a music result shows its recommendations', async () => {
   fireEvent.click(await screen.findByText('OK Computer'));
 
   expect(await screen.findByText(/No movie recommendations found/)).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: 'Music' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
   expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/movies/9'));
+  expect(window.location.search).toBe('?q=radiohead');
+});
+
+test('going back from a music result returns to the same search and page', async () => {
+  setRoutes({ search: searchResponse([DUNE], 2, 3), musicText: [OK_COMPUTER], recommendations: [] });
+  render(<App />);
+  search('radiohead');
+  fireEvent.click(await screen.findByText('OK Computer'));
+  await screen.findByText(/No movie recommendations found/);
+  axios.get.mockClear();
+
+  fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
+
+  expect(screen.getByLabelText('Title')).toBeVisible();
+  expect(screen.getByLabelText('Title')).toHaveValue('radiohead');
+  expect(screen.getByText('Dune')).toBeVisible();
+  expect(screen.getByText('Page 2 of 3')).toBeVisible();
+  expect(screen.queryByText(/No movie recommendations found/)).not.toBeInTheDocument();
+  expect(window.location.search).toBe('?q=radiohead');
+  expect(axios.get).not.toHaveBeenCalled();
+});
+
+test('the search is hidden while a music result is open', async () => {
+  setRoutes({ musicText: [OK_COMPUTER], recommendations: [] });
+  render(<App />);
+  search('radiohead');
+  fireEvent.click(await screen.findByText('OK Computer'));
+  await screen.findByText(/No movie recommendations found/);
+
+  expect(screen.getByLabelText('Title')).not.toBeVisible();
+});
+
+test.each([
+  ['a filter', () => fireEvent.click(screen.getByRole('tab', { name: 'Movies' }))],
+  ['the page navigation', () => goTo('My Library')],
+])('leaving through %s closes the music result', async (_, leave) => {
+  setRoutes({ musicText: [OK_COMPUTER], recommendations: [] });
+  render(<App />);
+  search('radiohead');
+  fireEvent.click(await screen.findByText('OK Computer'));
+  await screen.findByText(/No movie recommendations found/);
+
+  leave();
+
+  await waitFor(() =>
+    expect(screen.queryByText(/No movie recommendations found/)).not.toBeInTheDocument()
+  );
+});
+
+test('the Music tab still goes back to its own results', async () => {
+  setRoutes({ music: [OK_COMPUTER], recommendations: [] });
+  render(<App />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+  fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+  clickSearch();
+  fireEvent.click(await screen.findByText('OK Computer'));
+  await screen.findByText(/No movie recommendations found/);
+
+  fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
+
+  expect(await screen.findByText('OK Computer')).toBeVisible();
+  expect(screen.getByLabelText('Artist')).toHaveValue('Radiohead');
 });
 
 test('searches movies and shows together by default', async () => {
