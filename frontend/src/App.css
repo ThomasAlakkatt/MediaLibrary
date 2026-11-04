@@ -16,6 +16,10 @@
   --error-bg: #fef2f2;
   --error-border: #fecaca;
   --error-text: #b91c1c;
+  --accent-text: var(--green-700);
+  --rating-text: #b45309;
+  --button-bg: var(--green-700);
+  --button-bg-hover: var(--green-900);
 }
 
 :root[data-theme='dark'] {
@@ -28,6 +32,10 @@
   --error-bg: rgba(185, 28, 28, 0.15);
   --error-border: #7f1d1d;
   --error-text: #fca5a5;
+  /* Tells the browser to draw its own controls, like the calendar icon, for a dark page. */
+  color-scheme: dark;
+  --accent-text: #4ade80;
+  --rating-text: #fbbf24;
 }
 
 .App {
@@ -181,7 +189,7 @@ main {
 
 .suggestions-dropdown li:hover {
   background: var(--surface-tint);
-  color: var(--green-700);
+  color: var(--accent-text);
 }
 
 .input-group label {
@@ -219,7 +227,7 @@ main {
 
 #search-btn {
   flex: 1;
-  background: var(--green-600);
+  background: var(--button-bg);
   color: white;
   border: none;
   border-radius: 10px;
@@ -230,7 +238,7 @@ main {
 }
 
 #search-btn:hover:not(:disabled) {
-  background: var(--green-700);
+  background: var(--button-bg-hover);
   cursor: pointer;
 }
 
@@ -257,7 +265,7 @@ main {
 .clear-btn:hover:not(:disabled) {
   background: var(--surface-tint);
   border-color: var(--green-600);
-  color: var(--green-700);
+  color: var(--accent-text);
   cursor: pointer;
 }
 
@@ -288,7 +296,7 @@ main {
 }
 
 .empty-state-hint strong {
-  color: var(--green-700);
+  color: var(--accent-text);
 }
 
 .copy-link-row {
@@ -304,7 +312,7 @@ main {
   padding: 8px 16px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--green-700);
+  color: var(--accent-text);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -336,7 +344,7 @@ main {
   padding: 10px 18px;
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--green-700);
+  color: var(--accent-text);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -416,7 +424,7 @@ main {
 .result-artist {
   margin: 0 0 4px;
   font-weight: 600;
-  color: var(--green-700);
+  color: var(--accent-text);
   font-size: 0.9rem;
 }
 
@@ -433,7 +441,7 @@ main {
 .back-btn {
   background: none;
   border: none;
-  color: var(--green-700);
+  color: var(--accent-text);
   font-weight: 600;
   font-size: 0.95rem;
   padding: 8px 0;
@@ -491,7 +499,7 @@ main {
 .detail-release-artist {
   margin: 0 0 4px;
   font-weight: 600;
-  color: var(--green-700);
+  color: var(--accent-text);
 }
 
 .detail-release-year {
@@ -608,7 +616,7 @@ main {
 }
 
 .movie-title-link:hover h4 {
-  color: var(--green-700);
+  color: var(--accent-text);
 }
 
 .movie-info h4 {
@@ -622,7 +630,7 @@ main {
   margin-top: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--green-700);
+  color: var(--accent-text);
   text-decoration: none;
 }
 
@@ -639,7 +647,7 @@ main {
 }
 
 .movie-rating {
-  color: #b45309;
+  color: var(--rating-text);
   font-weight: 600;
 }
 
@@ -650,7 +658,7 @@ main {
 .movie-genres {
   margin: 0 0 8px;
   font-size: 0.8rem;
-  color: var(--green-700);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -941,13 +949,13 @@ main {
 }
 
 .primary-btn {
-  background: var(--green-600);
-  border: 1px solid var(--green-600);
+  background: var(--button-bg);
+  border: 1px solid var(--button-bg);
   color: white;
 }
 
 .primary-btn:hover:not(:disabled) {
-  background: var(--green-700);
+  background: var(--button-bg-hover);
 }
 
 .secondary-btn {
@@ -979,14 +987,9 @@ main {
 }
 
 .save-message {
-  color: var(--green-700);
+  color: var(--accent-text);
   font-size: 0.9rem;
   font-weight: 600;
-}
-
-:root[data-theme='dark'] .save-message,
-:root[data-theme='dark'] .my-rating {
-  color: var(--green-500);
 }
 
 .shelf-picker {
@@ -1043,7 +1046,7 @@ main {
 
 .my-rating {
   margin: 4px 0 0;
-  color: var(--green-700);
+  color: var(--accent-text);
   font-size: 0.9rem;
   font-weight: 700;
   white-space: nowrap;
@@ -1161,7 +1164,7 @@ main {
 }
 
 .shelf-item-title:hover .season-name {
-  color: var(--green-700);
+  color: var(--accent-text);
 }
 
 .shelf-item .my-rating {
@@ -1282,11 +1285,7 @@ main {
 
 .suggestions-dropdown li.shelf-option--active {
   background: var(--surface-tint);
-  color: var(--green-700);
-}
-
-:root[data-theme='dark'] .suggestions-dropdown li.shelf-option--active {
-  color: var(--green-500);
+  color: var(--accent-text);
 }
 
 .suggestions-dropdown li.shelf-search-note,
@@ -1297,15 +1296,12 @@ main {
 }
 
 .logged-badge {
-  color: var(--green-700);
+  color: var(--accent-text);
   font-size: 0.85rem;
   font-weight: 700;
   margin: 6px 0 0;
 }
 
-:root[data-theme='dark'] .logged-badge {
-  color: var(--green-500);
-}
 
 .log-scope {
   border: none;
@@ -1413,4 +1409,8 @@ label.track-content {
 
 .shelf-reorder-note {
   margin-top: 10px;
+}
+
+.shelf-items + .pagination {
+  padding-top: 24px;
 }
