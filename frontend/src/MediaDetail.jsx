@@ -37,20 +37,17 @@ function StatusSelect({ id, label, value, onChange, disabled }) {
   );
 }
 
-function RatingInput({ id, label, value, onChange, onBlur, onKeyDown }) {
+function RatingInput({ id, value, onChange }) {
   return (
     <span className="rating-input">
       <input
         id={id}
         type="text"
         inputMode="decimal"
-        aria-label={label}
         placeholder="0–10"
         autoComplete="off"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        onBlur={onBlur}
-        onKeyDown={onKeyDown}
       />
       <span className="rating-input-suffix">/ 10</span>
     </span>
@@ -242,17 +239,11 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
 function SeasonRow({ item, season, seasonLog, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [ratingDraft, setRatingDraft] = useState(ratingText(seasonLog?.rating));
   const name = season.name;
-
-  useEffect(() => {
-    setRatingDraft(ratingText(seasonLog?.rating));
-  }, [seasonLog?.rating]);
 
   async function save(changes) {
     const next = {
       status: seasonLog?.status ?? null,
-      rating: seasonLog?.rating ?? null,
       finished_on: seasonLog?.finished_on ?? null,
       ...changes,
     };
@@ -276,17 +267,6 @@ function SeasonRow({ item, season, seasonLog, onSaved }) {
     }
   }
 
-  // Saves when leaving the box or pressing Enter, so a half-typed number isn't saved or rejected.
-  function commitRating() {
-    const rating = parseRating(ratingDraft);
-    if (rating === undefined) {
-      setError(INVALID_RATING_MESSAGE);
-      return;
-    }
-    setError(null);
-    if (rating !== (seasonLog?.rating ?? null)) save({ rating });
-  }
-
   return (
     <li className="season-row">
       <div className="season-heading">
@@ -301,15 +281,6 @@ function SeasonRow({ item, season, seasonLog, onSaved }) {
           value={seasonLog?.status}
           disabled={saving}
           onChange={(status) => save({ status })}
-        />
-        <RatingInput
-          label={`${name} rating`}
-          value={ratingDraft}
-          onChange={setRatingDraft}
-          onBlur={commitRating}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') commitRating();
-          }}
         />
         {seasonLog?.status === 'finished' && (
           <input

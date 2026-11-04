@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS season_logs (
     item_id INTEGER NOT NULL REFERENCES library_items (id) ON DELETE CASCADE,
     season_number INTEGER NOT NULL,
     status TEXT CHECK (status IN ('want', 'in_progress', 'finished')),
-    rating REAL CHECK (rating BETWEEN 0 AND 10),
     finished_on TEXT,
     PRIMARY KEY (item_id, season_number)
 );
@@ -72,7 +71,7 @@ def get_connection():
 
 
 # Stored in the database file, so an older library can be upgraded when the app starts.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # Version 0 only allowed ratings of 0.5 and up. SQLite can't edit a CHECK rule in place, so each table
@@ -110,6 +109,56 @@ def _upgrade_to_version_1():
         connection.close()
 
 
+# Version 1 let seasons have their own rating. Seasons now only have a status and date, so the column
+# goes, along with season logs that had nothing else, and any title that leaves with nothing to keep.
+def _upgrade_to_version_2():
+    path = _db_path()
+    shutil.copy2(path, f"{path}-before-season-rating-removal")
+
+    connection = sqlite3.connect(path, isolation_level=None)
+    try:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("BEGIN")
+        try:
+            connection.execute(
+                """
+                CREATE TABLE new_season_logs (
+                    item_id INTEGER NOT NULL REFERENCES library_items (id) ON DELETE CASCADE,
+                    season_number INTEGER NOT NULL,
+                    status TEXT CHECK (status IN ('want', 'in_progress', 'finished')),
+                    finished_on TEXT,
+                    PRIMARY KEY (item_id, season_number)
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO new_season_logs (item_id, season_number, status, finished_on)
+                SELECT item_id, season_number, status, finished_on FROM season_logs
+                WHERE status IS NOT NULL OR finished_on IS NOT NULL
+                """
+            )
+            connection.execute("DROP TABLE season_logs")
+            connection.execute("ALTER TABLE new_season_logs RENAME TO season_logs")
+            connection.execute(
+                """
+                DELETE FROM library_items
+                WHERE status IS NULL AND rating IS NULL AND review IS NULL AND finished_on IS NULL
+                  AND id NOT IN (SELECT item_id FROM season_logs)
+                  AND id NOT IN (SELECT item_id FROM shelf_items)
+                """
+            )
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("Database upgrade would break links between tables")
+            connection.execute("PRAGMA user_version = 2")
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+
+
 def init_db():
     with get_connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -119,6 +168,8 @@ def init_db():
 
     if has_library and version < 1:
         _upgrade_to_version_1()
+    if has_library and version < 2:
+        _upgrade_to_version_2()
 
     with get_connection() as connection:
         connection.executescript(SCHEMA)

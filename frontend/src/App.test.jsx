@@ -696,41 +696,41 @@ test('clearing a log asks first', async () => {
   expect(screen.getByLabelText('My rating')).toHaveValue('');
 });
 
-test('rating a season saves when leaving the box', async () => {
+test('changing a season status saves straight away', async () => {
   axios.put.mockResolvedValue({
     data: libraryItem({
       media_type: 'tv',
-      seasons: [{ season_number: 1, status: null, rating: 9.5, finished_on: null }],
+      seasons: [{ season_number: 1, status: 'in_progress', finished_on: null }],
     }),
   });
   await openFromSearch(BREAKING_BAD);
 
-  fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '9.5' } });
-  expect(axios.put).not.toHaveBeenCalled();
-  fireEvent.blur(screen.getByLabelText('Season 1 rating'));
+  fireEvent.change(await screen.findByLabelText('Season 1 status'), { target: { value: 'in_progress' } });
 
-  await waitFor(() => expect(axios.put).toHaveBeenCalled());
-  await waitFor(() => expect(screen.getByLabelText('Season 1 rating')).toHaveValue('9.5'));
-  expect(axios.put).toHaveBeenCalledWith(
-    expect.stringContaining('/library/tv/1/seasons/1'),
-    expect.objectContaining({ title: 'Breaking Bad', rating: 9.5, status: null })
-  );
+  await waitFor(() => expect(screen.getByLabelText('Season 1 status')).toHaveValue('in_progress'));
+  expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/library/tv/1/seasons/1'), {
+    title: 'Breaking Bad',
+    year: '2008',
+    poster_path: null,
+    overview: 'Chemistry.',
+    status: 'in_progress',
+    finished_on: null,
+  });
 });
 
-test('an invalid season rating is not saved', async () => {
+test('seasons do not have a rating box', async () => {
   await openFromSearch(BREAKING_BAD);
-  fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '12' } });
-  fireEvent.blur(screen.getByLabelText('Season 1 rating'));
+  await screen.findByLabelText('Season 1 status');
 
-  expect(await screen.findByText('Rating must be a number between 0 and 10, with at most 2 decimal places.')).toBeInTheDocument();
-  expect(axios.put).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText('Season 1 rating')).not.toBeInTheDocument();
+  expect(screen.getAllByLabelText('My rating')).toHaveLength(1);
 });
 
 test('a season date only shows once the season is finished', async () => {
   setRoutes({
     item: libraryItem({
       media_type: 'tv',
-      seasons: [{ season_number: 1, status: 'in_progress', rating: null, finished_on: null }],
+      seasons: [{ season_number: 1, status: 'in_progress', finished_on: null }],
     }),
   });
   await openFromSearch(BREAKING_BAD);
@@ -851,11 +851,10 @@ test('saving a log opened from a shelf goes to My Library', async () => {
   expect(window.location.search).toBe('?view=library');
 });
 
-test('rating a season stays on the page', async () => {
+test('changing a season stays on the page', async () => {
   axios.put.mockResolvedValue({ data: libraryItem({ media_type: 'tv' }) });
   await openFromSearch(BREAKING_BAD);
-  fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '9.5' } });
-  fireEvent.keyDown(screen.getByLabelText('Season 1 rating'), { key: 'Enter' });
+  fireEvent.change(await screen.findByLabelText('Season 1 status'), { target: { value: 'want' } });
   await waitFor(() => expect(axios.put).toHaveBeenCalled());
   expect(screen.getByRole('region', { name: 'title detail' })).toBeInTheDocument();
 });

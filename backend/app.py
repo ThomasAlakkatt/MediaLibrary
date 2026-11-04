@@ -140,7 +140,6 @@ class LogRequest(TitleDetails):
 
 class SeasonLogRequest(TitleDetails):
     status: Optional[Status] = None
-    rating: Rating = None
     finished_on: Optional[date] = None
 
 
@@ -240,7 +239,7 @@ def clear_log(media_type: MediaType, tmdb_id: int):
 
 @app.put("/library/tv/{tmdb_id}/seasons/{season_number}")
 def save_season_log(tmdb_id: int, season_number: int, body: SeasonLogRequest):
-    details, log = _split_details(body, ("status", "rating", "finished_on"))
+    details, log = _split_details(body, ("status", "finished_on"))
     return library_service.save_season_log(tmdb_id, season_number, details, log)
 
 

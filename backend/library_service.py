@@ -86,7 +86,7 @@ def _load_item(connection, media_type, tmdb_id):
         dict(season)
         for season in connection.execute(
             """
-            SELECT season_number, status, rating, finished_on
+            SELECT season_number, status, finished_on
             FROM season_logs WHERE item_id = ? ORDER BY season_number
             """,
             (item["id"],),
@@ -180,17 +180,16 @@ def clear_log(media_type, tmdb_id):
 def save_season_log(tmdb_id, season_number, details, log):
     with get_connection() as connection:
         item_id = _ensure_item(connection, "tv", tmdb_id, details)
-        if any(log.get(field) is not None for field in ("status", "rating", "finished_on")):
+        if any(log.get(field) is not None for field in ("status", "finished_on")):
             connection.execute(
                 """
-                INSERT INTO season_logs (item_id, season_number, status, rating, finished_on)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO season_logs (item_id, season_number, status, finished_on)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT (item_id, season_number) DO UPDATE SET
                     status = excluded.status,
-                    rating = excluded.rating,
                     finished_on = excluded.finished_on
                 """,
-                (item_id, season_number, log.get("status"), log.get("rating"), log.get("finished_on")),
+                (item_id, season_number, log.get("status"), log.get("finished_on")),
             )
         else:
             connection.execute(

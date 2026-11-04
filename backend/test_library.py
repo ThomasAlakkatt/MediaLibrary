@@ -99,29 +99,33 @@ def test_an_empty_log_leaves_nothing_behind(client):
 
 def test_season_logs(client):
     url = "/library/tv/2/seasons"
-    item = client.put(f"{url}/1", json={**details(BB), "status": "finished", "rating": 9.5}).json()
-    assert item["seasons"] == [
-        {"season_number": 1, "status": "finished", "rating": 9.5, "finished_on": None}
-    ]
+    item = client.put(f"{url}/1", json={**details(BB), "status": "finished"}).json()
+    assert item["seasons"] == [{"season_number": 1, "status": "finished", "finished_on": None}]
     assert item["status"] is None
     assert [i["title"] for i in client.get("/library").json()] == ["Breaking Bad"]
 
     client.put(f"{url}/0", json={**details(BB), "status": "want"})
-    item = client.put(f"{url}/1", json={**details(BB), "rating": 7}).json()
-    assert [(s["season_number"], s["status"], s["rating"]) for s in item["seasons"]] == [
-        (0, "want", None),
-        (1, None, 7),
+    item = client.put(f"{url}/1", json={**details(BB), "status": "in_progress"}).json()
+    assert [(s["season_number"], s["status"]) for s in item["seasons"]] == [
+        (0, "want"),
+        (1, "in_progress"),
     ]
 
 
-def test_invalid_season_rating_is_rejected(client):
-    for rating in (10.5, 7.333):
-        response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": rating})
-        assert response.status_code == 422
+def test_seasons_do_not_have_ratings(client):
+    response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 7})
+    assert response.status_code == 200
+    assert response.json() is None
+    assert client.get("/library/tv/2").status_code == 404
+
+    item = client.put(
+        "/library/tv/2/seasons/1", json={**details(BB), "status": "want", "rating": 7}
+    ).json()
+    assert "rating" not in item["seasons"][0]
 
 
 def test_clearing_all_season_logs_removes_an_otherwise_empty_title(client):
-    client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 7})
+    client.put("/library/tv/2/seasons/1", json={**details(BB), "status": "want"})
     assert client.put("/library/tv/2/seasons/1", json=details(BB)).json() is None
     assert client.get("/library").json() == []
 
@@ -129,7 +133,7 @@ def test_clearing_all_season_logs_removes_an_otherwise_empty_title(client):
 def test_clearing_a_log_removes_seasons_but_keeps_shelves(client):
     shelf_id = make_shelf(client)
     add(client, shelf_id, BB)
-    client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 7})
+    client.put("/library/tv/2/seasons/1", json={**details(BB), "status": "want"})
     save_log(client, BB, rating=9)
 
     item = client.delete("/library/tv/2").json()
@@ -352,12 +356,12 @@ def test_upgrade_keeps_everything_and_allows_new_ratings(old_database):
         item = client.get("/library/tv/2").json()
         assert (item["id"], item["rating"], item["review"]) == (7, 9.5, "Great")
         assert item["shelf_ids"] == [3]
-        assert item["seasons"][0]["rating"] == 8.5
+        assert item["seasons"] == [
+            {"season_number": 1, "status": "finished", "finished_on": "2026-11-01"}
+        ]
         assert [i["title"] for i in client.get("/shelves/3").json()["items"]] == ["Breaking Bad"]
 
         assert save_log(client, DUNE, rating=0).status_code == 200
-        response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 0})
-        assert response.json()["seasons"][0]["rating"] == 0
 
 
 def test_upgrade_keeps_a_copy_of_the_old_file(old_database):
@@ -383,3 +387,56 @@ def test_upgrade_only_runs_once(old_database):
         save_log(client, DUNE, rating=0)
     with upgraded_client() as client:
         assert client.get("/library/movie/1").json()["rating"] == 0
+
+
+def make_version_1_database(path, monkeypatch, rows):
+    connection = sqlite3.connect(path)
+    connection.executescript(OLD_SCHEMA)
+    connection.executescript(rows)
+    connection.execute("PRAGMA user_version = 1")
+    connection.close()
+    monkeypatch.setenv("MEDIALIBRARY_DB", str(path))
+
+
+def test_upgrade_removes_season_ratings_and_keeps_the_rest(tmp_path, monkeypatch):
+    make_version_1_database(tmp_path / "v1.db", monkeypatch, "")
+    with upgraded_client() as client:
+        item = client.get("/library/tv/2").json()
+        assert item["rating"] == 9.5
+        assert item["seasons"] == [
+            {"season_number": 1, "status": "finished", "finished_on": "2026-11-01"}
+        ]
+    connection = sqlite3.connect(tmp_path / "v1.db")
+    columns = [row[1] for row in connection.execute("PRAGMA table_info(season_logs)")]
+    assert columns == ["item_id", "season_number", "status", "finished_on"]
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+    connection.close()
+
+
+def test_upgrade_removes_what_only_had_a_season_rating(tmp_path, monkeypatch):
+    make_version_1_database(
+        tmp_path / "v1.db",
+        monkeypatch,
+        """
+        INSERT INTO season_logs VALUES (7, 2, NULL, 6, NULL);
+        INSERT INTO library_items (id, media_type, tmdb_id, title) VALUES (8, 'tv', 8, 'Only A Rating');
+        INSERT INTO season_logs VALUES (8, 1, NULL, 5, NULL);
+        INSERT INTO library_items (id, media_type, tmdb_id, title) VALUES (9, 'tv', 9, 'On A Shelf');
+        INSERT INTO season_logs VALUES (9, 1, NULL, 5, NULL);
+        INSERT INTO shelf_items VALUES (3, 9, 1);
+        """,
+    )
+    with upgraded_client() as client:
+        assert [s["season_number"] for s in client.get("/library/tv/2").json()["seasons"]] == [1]
+        assert client.get("/library/tv/8").status_code == 404
+        kept = client.get("/library/tv/9").json()
+        assert (kept["seasons"], kept["shelf_ids"]) == ([], [3])
+
+
+def test_upgrade_to_version_2_keeps_a_copy_of_the_old_file(tmp_path, monkeypatch):
+    make_version_1_database(tmp_path / "v1.db", monkeypatch, "")
+    with upgraded_client():
+        pass
+    backup = sqlite3.connect(f"{tmp_path / 'v1.db'}-before-season-rating-removal")
+    assert backup.execute("SELECT rating FROM season_logs").fetchone()[0] == 8.5
+    backup.close()
