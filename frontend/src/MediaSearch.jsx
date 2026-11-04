@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_URL, getErrorMessage } from './api';
+import { API_URL, getErrorMessage, statusLabels } from './api';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
 import MediaDetail from './MediaDetail';
 
 const SEARCH_LABELS = { all: 'movies, shows and music', movie: 'movies', tv: 'shows' };
+
+function LoggedBadge({ log }) {
+  const status = log.status ? statusLabels(log.media_type)[log.status] : 'Logged';
+  return (
+    <p className="logged-badge">
+      ✓ {status}
+      {log.rating !== null && ` · ★ ${log.rating}`}
+    </p>
+  );
+}
 
 function updateShareableUrl(query, type) {
   const params = new URLSearchParams();
@@ -34,6 +44,7 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
   const [hasResponse, setHasResponse] = useState(false);
 
   const [selected, setSelected] = useState(null);
+  const [logs, setLogs] = useState({});
 
   // Lets a slower, older request be ignored if a newer search has started since.
   const latestRequest = useRef(0);
@@ -100,6 +111,27 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
     []
   );
 
+  // Marks results already in the library. Also runs when coming back from a title's page, since it may
+  // have just been logged. The marks are a nice extra, so results still show if this fails.
+  useEffect(() => {
+    if (selected || results.length === 0) return undefined;
+    let current = true;
+    axios
+      .get(`${API_URL}/library`)
+      .then((response) => {
+        if (!current) return;
+        setLogs(
+          Object.fromEntries(
+            response.data.map((log) => [`${log.media_type}-${log.tmdb_id}`, log])
+          )
+        );
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [results, selected]);
+
   function handleSubmit(event) {
     event.preventDefault();
     const trimmed = query.trim();
@@ -149,9 +181,14 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
         <h2 className="results-heading">Movies &amp; Shows</h2>
       )}
       <section aria-label="results" className="results">
-        {results.map((item) => (
-          <MediaCard key={`${item.media_type}-${item.id}`} item={item} onSelect={handleSelect} />
-        ))}
+        {results.map((item) => {
+          const key = `${item.media_type}-${item.id}`;
+          return (
+            <MediaCard key={key} item={item} onSelect={handleSelect}>
+              {logs[key] && <LoggedBadge log={logs[key]} />}
+            </MediaCard>
+          );
+        })}
       </section>
     </>
   );

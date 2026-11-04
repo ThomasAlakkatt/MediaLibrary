@@ -251,7 +251,7 @@ test('going back from a music result returns to the same search and page', async
   expect(screen.getByText('Page 2 of 3')).toBeVisible();
   expect(screen.queryByText(/No movie recommendations found/)).not.toBeInTheDocument();
   expect(window.location.search).toBe('?q=radiohead');
-  expect(axios.get).not.toHaveBeenCalled();
+  expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/search/'), expect.anything());
 });
 
 test('the search is hidden while a music result is open', async () => {
@@ -406,7 +406,7 @@ test('changing the filter reruns the current search', async () => {
 
   await screen.findByText('Breaking Bad');
   expect(screen.queryByText('Dune')).not.toBeInTheDocument();
-  expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/search/media'), {
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/search/media'), {
     params: { query: 'dune', type: 'tv', page: 1 },
   });
   expect(window.location.search).toBe('?q=dune&type=tv');
@@ -1063,6 +1063,84 @@ describe('choosing shelves', () => {
 
     expect(await screen.findByRole('button', { name: 'Remove from Fifth' })).toBeInTheDocument();
     expect(await searchBox()).toBeInTheDocument();
+  });
+});
+
+describe('marking logged titles in search results', () => {
+  test('a logged title shows its status and rating', async () => {
+    setRoutes({
+      search: searchResponse([DUNE, { ...DUNE, id: 2, title: 'Not Logged' }]),
+      library: [libraryItem({ status: 'finished', rating: 8.5 })],
+    });
+    render(<App />);
+    search('dune');
+
+    expect(await screen.findByText('✓ Watched · ★ 8.5')).toBeInTheDocument();
+    expect(screen.getAllByText(/^✓/)).toHaveLength(1);
+  });
+
+  test('a rating of 0 still shows', async () => {
+    setRoutes({
+      search: searchResponse([DUNE]),
+      library: [libraryItem({ status: 'finished', rating: 0 })],
+    });
+    render(<App />);
+    search('dune');
+    expect(await screen.findByText('✓ Watched · ★ 0')).toBeInTheDocument();
+  });
+
+  test('a title with no status or rating says Logged', async () => {
+    setRoutes({ search: searchResponse([DUNE]), library: [libraryItem({ review: 'Good' })] });
+    render(<App />);
+    search('dune');
+    expect(await screen.findByText('✓ Logged')).toBeInTheDocument();
+  });
+
+  test('a movie and show with the same id are not confused', async () => {
+    setRoutes({
+      search: searchResponse([BREAKING_BAD]),
+      library: [libraryItem({ media_type: 'movie', tmdb_id: 1, status: 'finished' })],
+    });
+    render(<App />);
+    search('breaking');
+    await screen.findByText('Breaking Bad');
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/library$/)));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(screen.queryByText(/^✓/)).not.toBeInTheDocument();
+  });
+
+  test('coming back after logging shows the new mark', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ rating: 9 }) });
+    setRoutes({ search: searchResponse([DUNE]) });
+    render(<App />);
+    search('dune');
+    fireEvent.click(await screen.findByText('Dune'));
+    await screen.findByLabelText('My rating');
+    expect(screen.queryByText(/^✓/)).not.toBeInTheDocument();
+
+    setRoutes({ library: [libraryItem({ status: 'finished', rating: 9 })] });
+    fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
+
+    expect(await screen.findByText('✓ Watched · ★ 9')).toBeInTheDocument();
+  });
+
+  test('results still show if the library cannot be loaded', async () => {
+    setRoutes({
+      search: searchResponse([DUNE]),
+      library: { response: { status: 500, data: {} } },
+    });
+    render(<App />);
+    search('dune');
+    expect(await screen.findByText('Dune')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+  });
+
+  test('no library request is made without results', async () => {
+    render(<App />);
+    search('zzz');
+    await screen.findByText('No results found.');
+    expect(axios.get).not.toHaveBeenCalledWith(expect.stringMatching(/\/library$/));
   });
 });
 

@@ -1294,3 +1294,14 @@ main {
   color: var(--muted);
   cursor: default;
 }
+
+.logged-badge {
+  color: var(--green-700);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 6px 0 0;
+}
+
+:root[data-theme='dark'] .logged-badge {
+  color: var(--green-500);
+}
