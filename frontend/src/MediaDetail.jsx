@@ -349,6 +349,137 @@ function ShowSeasons({ item, log, onLogChanged }) {
   );
 }
 
+// With more shelves than this, a title page shows a search box instead of listing them all.
+const MAX_LISTED_SHELVES = 4;
+
+function ShelfSearch({ shelves, shelfIds, busy, onAdd, onRemove, onCreate }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  const typed = query.trim();
+  const lowerTyped = typed.toLowerCase();
+  const onShelves = shelves.filter((shelf) => shelfIds.includes(shelf.id));
+  const matches = shelves.filter(
+    (shelf) => !shelfIds.includes(shelf.id) && shelf.name.toLowerCase().includes(lowerTyped)
+  );
+  const exactMatch = shelves.find((shelf) => shelf.name.toLowerCase() === lowerTyped);
+
+  const options = matches.map((shelf) => ({
+    id: `shelf-option-${shelf.id}`,
+    label: shelf.name,
+    pick: () => onAdd(shelf),
+  }));
+  if (typed && !exactMatch) {
+    options.push({
+      id: 'shelf-option-create',
+      label: `+ Create "${typed}"`,
+      pick: () => onCreate(typed),
+    });
+  }
+
+  const activeOption = options[activeIndex];
+
+  // Keeps the highlighted option visible when moving through a long list with the keyboard.
+  useEffect(() => {
+    if (activeOption) document.getElementById(activeOption.id)?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeOption?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function updateQuery(value) {
+    setQuery(value);
+    setOpen(true);
+    setActiveIndex(value.trim() ? 0 : -1);
+  }
+
+  async function pick(option) {
+    if (busy) return;
+    const succeeded = await option.pick();
+    if (succeeded) updateQuery('');
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setOpen(true);
+      if (options.length === 0) return;
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((index) => (Math.max(index, step === 1 ? -1 : 0) + step + options.length) % options.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (activeOption) pick(activeOption);
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+    }
+  }
+
+  let note = null;
+  if (options.length === 0) {
+    if (exactMatch) note = `Already on ${exactMatch.name}`;
+    else if (!typed) note = 'This title is on all your shelves';
+  }
+
+  return (
+    <>
+      {onShelves.length > 0 && (
+        <ul className="shelf-options">
+          {onShelves.map((shelf) => (
+            <li key={shelf.id} className="shelf-chip">
+              ✓ {shelf.name}
+              <button
+                type="button"
+                className="shelf-chip-remove"
+                aria-label={`Remove from ${shelf.name}`}
+                disabled={busy}
+                onClick={() => onRemove(shelf)}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="shelf-search">
+        <input
+          type="text"
+          role="combobox"
+          aria-label="Search or create a shelf"
+          aria-expanded={open}
+          aria-controls="shelf-search-options"
+          aria-autocomplete="list"
+          aria-activedescendant={open ? activeOption?.id : undefined}
+          placeholder="Search or create a shelf..."
+          maxLength="100"
+          autoComplete="off"
+          value={query}
+          onChange={(event) => updateQuery(event.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={handleKeyDown}
+        />
+        {open && (options.length > 0 || note) && (
+          <ul id="shelf-search-options" role="listbox" className="suggestions-dropdown">
+            {options.map((option, index) => (
+              <li
+                key={option.id}
+                id={option.id}
+                role="option"
+                aria-selected={index === activeIndex}
+                className={index === activeIndex ? 'shelf-option--active' : undefined}
+                // Stops the box losing focus, which would close this list before the click lands.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pick(option)}
+              >
+                {option.label}
+              </li>
+            ))}
+            {note && <li className="shelf-search-note">{note}</li>}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
 function ShelfPicker({ item, log, onLogChanged }) {
   const [shelves, setShelves] = useState(null);
   const [newName, setNewName] = useState('');
@@ -406,18 +537,15 @@ function ShelfPicker({ item, log, onLogChanged }) {
   }
 
   function handleToggle(shelf, checked) {
-    run(async () => {
+    return run(async () => {
       if (checked) await addRequest(shelf.id);
       else await axios.delete(`${API_URL}/shelves/${shelf.id}/items/${log.id}`);
       await refreshLog();
     }, 'Something went wrong updating that shelf. Please try again.');
   }
 
-  async function handleCreate(event) {
-    event.preventDefault();
-    const name = newName.trim();
-    if (!name) return;
-    const succeeded = await run(async () => {
+  function createAndAdd(name) {
+    return run(async () => {
       const response = await axios.post(`${API_URL}/shelves`, { name });
       setShelves((prev) =>
         [...prev, response.data].sort((a, b) => a.name.localeCompare(b.name))
@@ -425,15 +553,33 @@ function ShelfPicker({ item, log, onLogChanged }) {
       await addRequest(response.data.id);
       await refreshLog();
     }, 'Something went wrong creating that shelf. Please try again.');
-    if (succeeded) setNewName('');
   }
+
+  async function handleCreate(event) {
+    event.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    if (await createAndAdd(name)) setNewName('');
+  }
+
+  const useSearch = shelves?.length > MAX_LISTED_SHELVES;
 
   return (
     <section aria-label="shelves" className="shelf-picker">
       <h3>Shelves</h3>
       {shelves === null && <p className="movie-status">Loading shelves…</p>}
       {shelves?.length === 0 && !error && <p className="movie-status">You don't have any shelves yet.</p>}
-      {shelves?.length > 0 && (
+      {useSearch && (
+        <ShelfSearch
+          shelves={shelves}
+          shelfIds={shelfIds}
+          busy={busy}
+          onAdd={(shelf) => handleToggle(shelf, true)}
+          onRemove={(shelf) => handleToggle(shelf, false)}
+          onCreate={createAndAdd}
+        />
+      )}
+      {shelves?.length > 0 && !useSearch && (
         <ul className="shelf-options">
           {shelves.map((shelf) => (
             <li key={shelf.id}>
@@ -450,19 +596,21 @@ function ShelfPicker({ item, log, onLogChanged }) {
           ))}
         </ul>
       )}
-      <form className="inline-form" onSubmit={handleCreate}>
-        <input
-          type="text"
-          aria-label="New shelf name"
-          placeholder="New shelf name"
-          maxLength="100"
-          value={newName}
-          onChange={(event) => setNewName(event.target.value)}
-        />
-        <button className="secondary-btn" type="submit" disabled={busy || !newName.trim()}>
-          Create and add
-        </button>
-      </form>
+      {!useSearch && (
+        <form className="inline-form" onSubmit={handleCreate}>
+          <input
+            type="text"
+            aria-label="New shelf name"
+            placeholder="New shelf name"
+            maxLength="100"
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+          />
+          <button className="secondary-btn" type="submit" disabled={busy || !newName.trim()}>
+            Create and add
+          </button>
+        </form>
+      )}
       {error && <p className="movie-status movie-error">{error}</p>}
     </section>
   );

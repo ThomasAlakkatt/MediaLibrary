@@ -1241,3 +1241,56 @@ main {
   flex-direction: column;
   gap: 12px;
 }
+
+.shelf-chip {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--green-600);
+  border-radius: 999px;
+  color: var(--ink);
+  display: flex;
+  font-size: 0.9rem;
+  gap: 8px;
+  padding: 4px 6px 4px 14px;
+}
+
+.shelf-chip-remove {
+  background: none;
+  border: none;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  height: 26px;
+  width: 26px;
+}
+
+.shelf-chip-remove:hover:not(:disabled) {
+  background: var(--surface-tint);
+  color: var(--ink);
+}
+
+.shelf-search {
+  max-width: 420px;
+  position: relative;
+}
+
+.shelf-search input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.suggestions-dropdown li.shelf-option--active {
+  background: var(--surface-tint);
+  color: var(--green-700);
+}
+
+:root[data-theme='dark'] .suggestions-dropdown li.shelf-option--active {
+  color: var(--green-500);
+}
+
+.suggestions-dropdown li.shelf-search-note,
+.suggestions-dropdown li.shelf-search-note:hover {
+  background: none;
+  color: var(--muted);
+  cursor: default;
+}

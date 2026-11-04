@@ -869,6 +869,203 @@ test('a new shelf can be created from a title page', async () => {
   expect(screen.getByLabelText('New shelf name')).toHaveValue('');
 });
 
+describe('choosing shelves', () => {
+  const NAMES = ['Comedy Night', 'Comfort Movies', 'Favorites', 'Sci-Fi Night', 'Weekend'];
+  const MANY = NAMES.map((name, index) => ({ ...SHELF, id: index + 1, name }));
+
+  async function openWithShelves(shelves, item = libraryItem()) {
+    setRoutes({ shelves, item });
+    await openFromSearch(DUNE);
+    await screen.findByLabelText('My rating');
+  }
+
+  function searchBox() {
+    return screen.findByRole('combobox', { name: 'Search or create a shelf' });
+  }
+
+  function optionNames() {
+    return within(screen.getByRole('listbox')).getAllByRole('option').map((option) => option.textContent);
+  }
+
+  test('4 shelves are all listed, with no search box', async () => {
+    await openWithShelves(MANY.slice(0, 4));
+    expect(await screen.findByRole('checkbox', { name: 'Favorites' })).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(4);
+    expect(screen.getByLabelText('New shelf name')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Search or create a shelf' })).not.toBeInTheDocument();
+  });
+
+  test('5 shelves get a search box and are not listed', async () => {
+    await openWithShelves(MANY);
+    await searchBox();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('New shelf name')).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  test('clicking into the box lists the shelves to browse', async () => {
+    await openWithShelves(MANY);
+    fireEvent.focus(await searchBox());
+    expect(optionNames()).toEqual(NAMES);
+  });
+
+  test('typing narrows the list, ignoring case', async () => {
+    await openWithShelves(MANY);
+    fireEvent.change(await searchBox(), { target: { value: 'NIGHT' } });
+    expect(optionNames()).toEqual(['Comedy Night', 'Sci-Fi Night', '+ Create "NIGHT"']);
+  });
+
+  test('shelves the title is on show as pills, not options', async () => {
+    await openWithShelves(MANY, libraryItem({ shelf_ids: [3] }));
+    fireEvent.focus(await searchBox());
+    expect(screen.getByRole('button', { name: 'Remove from Favorites' })).toBeInTheDocument();
+    expect(optionNames()).toEqual(NAMES.filter((name) => name !== 'Favorites'));
+  });
+
+  test('clicking a shelf adds the title and clears the box', async () => {
+    axios.post.mockResolvedValue({ data: {} });
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.change(box, { target: { value: 'week' } });
+
+    setRoutes({ item: libraryItem({ shelf_ids: [5] }) });
+    fireEvent.click(screen.getByRole('option', { name: 'Weekend' }));
+
+    expect(await screen.findByRole('button', { name: 'Remove from Weekend' })).toBeInTheDocument();
+    expect(axios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/shelves/5/items'),
+      expect.objectContaining({ media_type: 'movie', tmdb_id: 1 })
+    );
+    expect(box).toHaveValue('');
+  });
+
+  test('the ✕ on a pill removes the title from that shelf', async () => {
+    axios.delete.mockResolvedValue({ data: {} });
+    await openWithShelves(MANY, libraryItem({ shelf_ids: [3] }));
+
+    setRoutes({ item: libraryItem() });
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove from Favorites' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Remove from Favorites' })).not.toBeInTheDocument()
+    );
+    expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/shelves/3/items/50'));
+  });
+
+  test('Enter picks the top match', async () => {
+    axios.post.mockResolvedValue({ data: {} });
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.change(box, { target: { value: 'com' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/shelves/1/items'), expect.anything())
+    );
+  });
+
+  test('Enter with an empty box does nothing', async () => {
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.focus(box);
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('arrow keys choose an option, wrapping at the ends', async () => {
+    axios.post.mockResolvedValue({ data: {} });
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.change(box, { target: { value: 'night' } });
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: 'Sci-Fi Night' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: 'Comedy Night' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(box, { key: 'ArrowUp' });
+    expect(screen.getByRole('option', { name: '+ Create "night"' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('Escape closes the list', async () => {
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.focus(box);
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  test('a new name can be created, and the title added to it', async () => {
+    axios.post
+      .mockResolvedValueOnce({ data: { ...SHELF, id: 9, name: 'Com' } })
+      .mockResolvedValueOnce({ data: {} });
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.change(box, { target: { value: ' Com ' } });
+
+    setRoutes({ item: libraryItem({ shelf_ids: [9] }) });
+    fireEvent.click(screen.getByRole('option', { name: '+ Create "Com"' }));
+
+    expect(await screen.findByRole('button', { name: 'Remove from Com' })).toBeInTheDocument();
+    expect(axios.post).toHaveBeenNthCalledWith(1, expect.stringMatching(/\/shelves$/), { name: 'Com' });
+    expect(axios.post).toHaveBeenNthCalledWith(2, expect.stringContaining('/shelves/9/items'), expect.anything());
+  });
+
+  test('Enter creates the shelf when nothing matches', async () => {
+    axios.post.mockResolvedValue({ data: { ...SHELF, id: 9, name: 'New One' } });
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.change(box, { target: { value: 'New One' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/shelves$/), { name: 'New One' })
+    );
+  });
+
+  test('an exact name, in any case, offers no Create', async () => {
+    await openWithShelves(MANY);
+    fireEvent.change(await searchBox(), { target: { value: 'favorites' } });
+    expect(optionNames()).toEqual(['Favorites']);
+  });
+
+  test('typing a shelf the title is already on says so', async () => {
+    await openWithShelves(MANY, libraryItem({ shelf_ids: [3] }));
+    fireEvent.change(await searchBox(), { target: { value: 'favorites' } });
+    expect(within(screen.getByRole('listbox')).queryByRole('option')).not.toBeInTheDocument();
+    expect(screen.getByText('Already on Favorites')).toBeInTheDocument();
+  });
+
+  test('being on every shelf says so', async () => {
+    await openWithShelves(MANY, libraryItem({ shelf_ids: [1, 2, 3, 4, 5] }));
+    fireEvent.focus(await searchBox());
+    expect(screen.getByText('This title is on all your shelves')).toBeInTheDocument();
+  });
+
+  test('a failed add shows the error and keeps what was typed', async () => {
+    axios.post.mockRejectedValue({ response: { status: 500, data: {} } });
+    await openWithShelves(MANY);
+    const box = await searchBox();
+    fireEvent.change(box, { target: { value: 'week' } });
+    fireEvent.click(screen.getByRole('option', { name: 'Weekend' }));
+
+    expect(await screen.findByText(/Something went wrong updating that shelf/)).toBeInTheDocument();
+    expect(box).toHaveValue('week');
+  });
+
+  test('creating the 5th shelf switches to the search box', async () => {
+    axios.post
+      .mockResolvedValueOnce({ data: { ...SHELF, id: 9, name: 'Fifth' } })
+      .mockResolvedValueOnce({ data: {} });
+    await openWithShelves(MANY.slice(0, 4));
+    fireEvent.change(await screen.findByLabelText('New shelf name'), { target: { value: 'Fifth' } });
+    setRoutes({ item: libraryItem({ shelf_ids: [9] }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Create and add' }));
+
+    expect(await screen.findByRole('button', { name: 'Remove from Fifth' })).toBeInTheDocument();
+    expect(await searchBox()).toBeInTheDocument();
+  });
+});
+
 test('My Library lists logged titles with my rating', async () => {
   setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
   render(<App />);
