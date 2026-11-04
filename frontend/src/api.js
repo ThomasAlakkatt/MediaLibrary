@@ -23,6 +23,15 @@ export function parseRating(text) {
   return rating >= 0 && rating <= 10 ? rating : undefined;
 }
 
+// Today's date on the viewer's own calendar. toISOString() would give the UTC date, which is already
+// tomorrow during the evening in the US.
+export function todayString() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 export function ratingText(rating) {
   return rating === null || rating === undefined ? '' : String(rating);
 }

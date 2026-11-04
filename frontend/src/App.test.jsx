@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { vi, test, expect, beforeEach } from 'vitest';
+import { vi, test, expect, beforeEach, afterEach, describe } from 'vitest';
 import axios from 'axios';
 import App from './App';
 
@@ -398,6 +398,104 @@ test('saving a log sends a half-point rating and goes to My Library', async () =
     rating: 8.5,
     review: 'Great',
     finished_on: '2026-11-01',
+  });
+});
+
+describe('the default date', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // Late evening, when the UTC date is already tomorrow in the US.
+    vi.setSystemTime(new Date(2026, 10, 3, 23, 30));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  test('a new entry starts with today', async () => {
+    await openFromSearch(DUNE);
+    expect(await screen.findByLabelText('Date finished')).toHaveValue('2026-11-03');
+  });
+
+  test('saving a new entry sends today', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ rating: 8 }) });
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1].finished_on).toBe('2026-11-03');
+  });
+
+  test('a title only on a shelf counts as new', async () => {
+    setRoutes({ item: libraryItem({ shelf_ids: [5] }) });
+    await openFromSearch(DUNE);
+    expect(await screen.findByLabelText('Date finished')).toHaveValue('2026-11-03');
+  });
+
+  test('an existing log without a date stays blank', async () => {
+    setRoutes({ item: libraryItem({ status: 'in_progress' }) });
+    await openFromSearch(DUNE);
+    expect(await screen.findByLabelText('Date finished')).toHaveValue('');
+  });
+
+  test('an existing date is kept', async () => {
+    setRoutes({ item: libraryItem({ status: 'finished', finished_on: '2020-01-02' }) });
+    await openFromSearch(DUNE);
+    expect(await screen.findByLabelText('Date finished')).toHaveValue('2020-01-02');
+  });
+
+  test.each(['want', 'in_progress'])('choosing %s removes the automatic date', async (status) => {
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('Status'), { target: { value: status } });
+    expect(screen.getByLabelText('Date finished')).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'finished' } });
+    expect(screen.getByLabelText('Date finished')).toHaveValue('2026-11-03');
+  });
+
+  test('a date that was picked survives changing the status', async () => {
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('Date finished'), { target: { value: '2026-01-15' } });
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'want' } });
+    expect(screen.getByLabelText('Date finished')).toHaveValue('2026-01-15');
+  });
+
+  test('the date can be cleared', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ rating: 8 }) });
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('Date finished'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'finished' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1].finished_on).toBeNull();
+  });
+
+  test('clearing a log goes back to today', async () => {
+    setRoutes({ item: libraryItem({ rating: 7.5, finished_on: '2020-01-02' }) });
+    axios.delete.mockResolvedValue({ data: null });
+    await openFromSearch(DUNE);
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear log' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, clear' }));
+
+    await screen.findByText('Log cleared');
+    expect(screen.getByLabelText('Date finished')).toHaveValue('2026-11-03');
+  });
+
+  test('marking a season as watched fills in today', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ media_type: 'tv' }) });
+    await openFromSearch(BREAKING_BAD);
+    fireEvent.change(await screen.findByLabelText('Season 1 status'), { target: { value: 'finished' } });
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1]).toMatchObject({ status: 'finished', finished_on: '2026-11-03' });
+  });
+
+  test('other season statuses get no date', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ media_type: 'tv' }) });
+    await openFromSearch(BREAKING_BAD);
+    fireEvent.change(await screen.findByLabelText('Season 1 status'), { target: { value: 'want' } });
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1].finished_on).toBeNull();
   });
 });
 

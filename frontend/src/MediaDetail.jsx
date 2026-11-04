@@ -9,6 +9,7 @@ import {
   posterUrl,
   ratingText,
   titleDetails,
+  todayString,
 } from './api';
 import { Clapperboard } from './Loaders';
 import { TYPE_LABELS } from './MediaCard';
@@ -56,10 +57,17 @@ function RatingInput({ id, label, value, onChange, onBlur, onKeyDown }) {
   );
 }
 
-const EMPTY_DRAFT = { status: null, rating: '', review: '', finished_on: '' };
+// A new entry starts with today's date. A title only on a shelf, or with only season logs, is still new.
+function isNewEntry(log) {
+  return !log || !(log.status || log.rating !== null || log.review || log.finished_on);
+}
+
+function newDraft() {
+  return { status: null, rating: '', review: '', finished_on: todayString() };
+}
 
 function draftFromLog(log) {
-  if (!log) return EMPTY_DRAFT;
+  if (isNewEntry(log)) return newDraft();
   return {
     status: log.status,
     rating: ratingText(log.rating),
@@ -70,6 +78,8 @@ function draftFromLog(log) {
 
 function LogForm({ item, log, onSaved, onLogSubmitted }) {
   const [draft, setDraft] = useState(() => draftFromLog(log));
+  // True while the date is still the automatic one, rather than one that was saved or picked.
+  const [dateIsDefault, setDateIsDefault] = useState(() => isNewEntry(log));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -87,6 +97,16 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
   function updateDraft(changes) {
     setDraft((prev) => ({ ...prev, ...changes }));
     setMessage(null);
+  }
+
+  function handleStatusChange(status) {
+    if (!dateIsDefault) {
+      updateDraft({ status });
+      return;
+    }
+    // Something still being watched or waiting to be watched hasn't been finished today.
+    const notFinished = status === 'want' || status === 'in_progress';
+    updateDraft({ status, finished_on: notFinished ? '' : todayString() });
   }
 
   async function handleSave(event) {
@@ -124,7 +144,8 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
     try {
       const response = await axios.delete(`${API_URL}/library/${item.media_type}/${item.id}`);
       onSaved(response.data);
-      setDraft(EMPTY_DRAFT);
+      setDraft(newDraft());
+      setDateIsDefault(true);
       setConfirmingClear(false);
       setMessage('Log cleared');
     } catch (err) {
@@ -142,7 +163,7 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
           <StatusSelect
             id="log-status"
             value={draft.status}
-            onChange={(status) => updateDraft({ status })}
+            onChange={handleStatusChange}
           />
         </div>
         <div className="log-field">
@@ -159,7 +180,10 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
             id="log-finished"
             type="date"
             value={draft.finished_on}
-            onChange={(event) => updateDraft({ finished_on: event.target.value })}
+            onChange={(event) => {
+              setDateIsDefault(false);
+              updateDraft({ finished_on: event.target.value });
+            }}
           />
         </div>
       </div>
@@ -228,6 +252,8 @@ function SeasonRow({ item, season, seasonLog, onSaved }) {
     };
     // A date finished only applies to a finished season.
     if (next.status !== 'finished') next.finished_on = null;
+    // Marking a season as watched fills in today, which can then be changed.
+    else if (changes.status && !next.finished_on) next.finished_on = todayString();
 
     setSaving(true);
     setError(null);
