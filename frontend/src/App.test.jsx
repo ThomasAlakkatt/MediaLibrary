@@ -89,7 +89,7 @@ function setRoutes(overrides) {
 }
 
 function search(title) {
-  fireEvent.change(screen.getByLabelText('Title'), { target: { value: title } });
+  fireEvent.change(screen.getByLabelText('Search'), { target: { value: title } });
   clickSearch();
 }
 
@@ -263,8 +263,8 @@ test('going back from a music result returns to the same search and page', async
 
   fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
 
-  expect(screen.getByLabelText('Title')).toBeVisible();
-  expect(screen.getByLabelText('Title')).toHaveValue('radiohead');
+  expect(screen.getByLabelText('Search')).toBeVisible();
+  expect(screen.getByLabelText('Search')).toHaveValue('radiohead');
   expect(screen.getByText('Dune')).toBeVisible();
   expect(screen.getByText('Page 2 of 3')).toBeVisible();
   expect(screen.queryByRole('region', { name: 'album detail' })).not.toBeInTheDocument();
@@ -279,7 +279,7 @@ test('the search is hidden while a music result is open', async () => {
   fireEvent.click(await screen.findByText('OK Computer'));
   await screen.findByText('Airbag');
 
-  expect(screen.getByLabelText('Title')).not.toBeVisible();
+  expect(screen.getByLabelText('Search')).not.toBeVisible();
 });
 
 test.each([
@@ -312,6 +312,14 @@ test('the Music tab still goes back to its own results', async () => {
 
   expect(await screen.findByText('OK Computer')).toBeVisible();
   expect(screen.getByLabelText('Artist')).toHaveValue('Radiohead');
+});
+
+test('the search box is labeled for everything it searches', async () => {
+  render(<App />);
+  expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies, shows and music');
+  expect(screen.queryByText('Title', { selector: 'label' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Movies' }));
+  expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies');
 });
 
 test('searches movies and shows together by default', async () => {
@@ -351,7 +359,7 @@ test('runs the search from a shared link', async () => {
 
   expect(await screen.findByText('Breaking Bad')).toBeInTheDocument();
   expect(screen.getByRole('tab', { name: 'Shows' })).toHaveAttribute('aria-selected', 'true');
-  expect(screen.getByLabelText('Title')).toHaveValue('breaking');
+  expect(screen.getByLabelText('Search')).toHaveValue('breaking');
 });
 
 test('a blank search shows a message and sends nothing', () => {
@@ -2542,14 +2550,14 @@ test('the browser back button returns to the previous page', async () => {
   window.history.pushState(null, '', '/');
   window.dispatchEvent(new PopStateEvent('popstate'));
 
-  expect(await screen.findByLabelText('Title')).toBeInTheDocument();
+  expect(await screen.findByLabelText('Search')).toBeInTheDocument();
 });
 
 test('the Music filter keeps the artist and release search', async () => {
   setRoutes({ music: [{ id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 }] });
   render(<App />);
   fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
-  expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Search')).not.toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
   clickSearch();

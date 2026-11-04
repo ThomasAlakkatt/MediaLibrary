@@ -218,7 +218,7 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
         <form onSubmit={handleSubmit}>
           <div className="input-row">
             <div className="input-group">
-              <label htmlFor="media-query">Title</label>
+              <label htmlFor="media-query">Search</label>
               <input
                 type="search"
                 id="media-query"
