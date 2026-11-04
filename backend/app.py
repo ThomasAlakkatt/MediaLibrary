@@ -107,8 +107,8 @@ def show_not_found(request, exc):
 
 
 def _validate_rating(rating):
-    if rating is not None and not 0 <= rating <= 10:
-        raise ValueError("Rating must be between 0 and 10")
+    if rating is not None and (not 0 <= rating <= 10 or round(rating, 2) != rating):
+        raise ValueError("Rating must be between 0 and 10, with at most 2 decimal places")
     return rating
 
 

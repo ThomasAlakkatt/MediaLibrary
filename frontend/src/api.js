@@ -12,13 +12,14 @@ export const STATUS_LABELS = {
   finished: 'Watched',
 };
 
-export const INVALID_RATING_MESSAGE = 'Rating must be a number between 0 and 10.';
+export const INVALID_RATING_MESSAGE =
+  'Rating must be a number between 0 and 10, with at most 2 decimal places.';
 
 // Turns what was typed into a rating. Blank means no rating, and undefined means it isn't valid.
 export function parseRating(text) {
   const trimmed = text.trim();
   if (!trimmed) return null;
-  if (!/^(\d+\.?\d*|\.\d+)$/.test(trimmed)) return undefined;
+  if (!/^(\d+(\.\d{0,2})?|\.\d{1,2})$/.test(trimmed)) return undefined;
   const rating = Number(trimmed);
   return rating >= 0 && rating <= 10 ? rating : undefined;
 }

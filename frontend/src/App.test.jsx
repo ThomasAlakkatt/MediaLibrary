@@ -333,7 +333,13 @@ test('reopening a show after a failed lookup tries again', async () => {
 });
 
 test.each([
+  ['0.00', 0],
+  ['10.00', 10],
   ['7.3', 7.3],
+  ['7.25', 7.25],
+  ['9.99', 9.99],
+  ['.25', 0.25],
+  ['8.', 8],
   ['0', 0],
   ['10', 10],
   ['.5', 0.5],
@@ -350,7 +356,7 @@ test.each([
   expect(axios.put.mock.calls[0][1].rating).toBe(saved);
 });
 
-test.each(['11', '10.1', '-1', 'great', '8/10', '1e1', '.'])(
+test.each(['-0.01', '11', '10.1', '10.01', '-1', 'great', '8/10', '1e1', '.', '7.333', '.125', '7.500'])(
   'the rating %j is rejected without saving',
   async (typed) => {
     await openFromSearch(DUNE);
@@ -358,7 +364,7 @@ test.each(['11', '10.1', '-1', 'great', '8/10', '1e1', '.'])(
     fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: typed } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByText('Rating must be a number between 0 and 10.')).toBeInTheDocument();
+    expect(await screen.findByText('Rating must be a number between 0 and 10, with at most 2 decimal places.')).toBeInTheDocument();
     expect(axios.put).not.toHaveBeenCalled();
     expect(screen.getByLabelText('My rating')).toHaveValue(typed);
   }
@@ -560,7 +566,7 @@ test('an invalid season rating is not saved', async () => {
   fireEvent.change(await screen.findByLabelText('Season 1 rating'), { target: { value: '12' } });
   fireEvent.blur(screen.getByLabelText('Season 1 rating'));
 
-  expect(await screen.findByText('Rating must be a number between 0 and 10.')).toBeInTheDocument();
+  expect(await screen.findByText('Rating must be a number between 0 and 10, with at most 2 decimal places.')).toBeInTheDocument();
   expect(axios.put).not.toHaveBeenCalled();
 });
 

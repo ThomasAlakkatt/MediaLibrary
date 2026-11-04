@@ -31,14 +31,14 @@ def titles(shelf):
     return [item["title"] for item in shelf["items"]]
 
 
-@pytest.mark.parametrize("rating", [0, 0.5, 1, 7.3, 8, 9.75, 10])
+@pytest.mark.parametrize("rating", [0, 0.5, 0.01, 1, 7.3, 7.33, 8, 9.75, 9.99, 10])
 def test_valid_ratings_are_saved(client, rating):
     response = save_log(client, DUNE, rating=rating)
     assert response.status_code == 200
     assert response.json()["rating"] == rating
 
 
-@pytest.mark.parametrize("rating", [-1, -0.1, 10.1, 11])
+@pytest.mark.parametrize("rating", [-1, -0.1, -0.01, 10.01, 10.1, 11, 7.333, 0.001])
 def test_invalid_ratings_are_rejected(client, rating):
     assert save_log(client, DUNE, rating=rating).status_code == 422
     assert client.get("/library").json() == []
@@ -115,8 +115,9 @@ def test_season_logs(client):
 
 
 def test_invalid_season_rating_is_rejected(client):
-    response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": 10.5})
-    assert response.status_code == 422
+    for rating in (10.5, 7.333):
+        response = client.put("/library/tv/2/seasons/1", json={**details(BB), "rating": rating})
+        assert response.status_code == 422
 
 
 def test_clearing_all_season_logs_removes_an_otherwise_empty_title(client):
