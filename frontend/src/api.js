@@ -155,10 +155,10 @@ export function titleDetails(media) {
   };
 }
 
-// Library and shelf rows use tmdb_id, while search results and the detail page use id for the source's ID.
+// Library and shelf rows use source_id, while search results and the detail page use id for the source's ID.
 export function libraryItemToMedia(item) {
   return {
-    id: item.tmdb_id,
+    id: item.source_id,
     media_type: item.media_type,
     track_index: item.track_index,
     ...titleDetails(item),

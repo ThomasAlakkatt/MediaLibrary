@@ -529,7 +529,7 @@ export function ShelfPicker({ item, log, onLogChanged }) {
   function addRequest(shelfId) {
     return axios.post(`${API_URL}/shelves/${shelfId}/items`, {
       media_type: item.media_type,
-      tmdb_id: item.id,
+      source_id: item.id,
       track_index: item.track_index,
       ...titleDetails(item),
     });

@@ -52,7 +52,7 @@ const SHELF = { id: 5, name: 'Favorites', description: null, item_count: 0, cove
 function libraryItem(overrides = {}) {
   return {
     id: 50,
-    tmdb_id: 1,
+    source_id: 1,
     media_type: 'movie',
     title: 'Dune',
     year: '2021',
@@ -839,7 +839,7 @@ test('ticking a shelf adds the title to it', async () => {
   await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).toBeChecked());
   expect(axios.post).toHaveBeenCalledWith(
     expect.stringContaining('/shelves/5/items'),
-    expect.objectContaining({ media_type: 'movie', tmdb_id: 1, title: 'Dune' })
+    expect.objectContaining({ media_type: 'movie', source_id: 1, title: 'Dune' })
   );
 });
 
@@ -936,7 +936,7 @@ describe('choosing shelves', () => {
     expect(await screen.findByRole('button', { name: 'Remove from Weekend' })).toBeInTheDocument();
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringContaining('/shelves/5/items'),
-      expect.objectContaining({ media_type: 'movie', tmdb_id: 1 })
+      expect.objectContaining({ media_type: 'movie', source_id: 1 })
     );
     expect(box).toHaveValue('');
   });
@@ -1101,7 +1101,7 @@ describe('marking logged titles in search results', () => {
   test('a movie and show with the same id are not confused', async () => {
     setRoutes({
       search: searchResponse([BREAKING_BAD]),
-      library: [libraryItem({ media_type: 'movie', tmdb_id: 1, status: 'finished' })],
+      library: [libraryItem({ media_type: 'movie', source_id: 1, status: 'finished' })],
     });
     render(<App />);
     search('breaking');
@@ -1187,11 +1187,11 @@ describe('shows logged only by season', () => {
 
 describe('album pages', () => {
   const albumLibraryItem = (overrides = {}) =>
-    libraryItem({ id: 60, tmdb_id: 9, media_type: 'album', title: 'OK Computer', artists: 'Radiohead', ...overrides });
+    libraryItem({ id: 60, source_id: 9, media_type: 'album', title: 'OK Computer', artists: 'Radiohead', ...overrides });
   const songItem = (trackIndex, title, overrides = {}) =>
     libraryItem({
       id: 70 + trackIndex,
-      tmdb_id: 9,
+      source_id: 9,
       media_type: 'song',
       track_index: trackIndex,
       title,
@@ -1362,7 +1362,7 @@ describe('album pages', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).toBeChecked());
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringContaining('/shelves/5/items'),
-      expect.objectContaining({ media_type: 'album', tmdb_id: 9, artists: 'Radiohead' })
+      expect.objectContaining({ media_type: 'album', source_id: 9, artists: 'Radiohead' })
     );
   });
 
@@ -1433,7 +1433,7 @@ describe('album pages', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Favorites' }));
 
     await waitFor(() => expect(axios.post).toHaveBeenCalled());
-    expect(axios.post.mock.calls[0][1]).toMatchObject({ media_type: 'song', tmdb_id: 9, track_index: 2 });
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ media_type: 'song', source_id: 9, track_index: 2 });
   });
 
   test('music search results are marked when logged', async () => {
@@ -1471,7 +1471,7 @@ describe('album pages', () => {
 describe('pagination', () => {
   const manyItems = (count) =>
     Array.from({ length: count }, (_, index) =>
-      libraryItem({ id: index + 1, tmdb_id: index + 1, title: `Title ${index + 1}` })
+      libraryItem({ id: index + 1, source_id: index + 1, title: `Title ${index + 1}` })
     );
   const manyShelves = (count) =>
     Array.from({ length: count }, (_, index) => ({ ...SHELF, id: index + 1, name: `Shelf ${index + 1}` }));
@@ -1511,7 +1511,7 @@ describe('pagination', () => {
     });
 
     test.each([
-      ['Sort by', 'watched:desc'],
+      ['Sort by', 'finished:desc'],
       ['Filter by type', 'album'],
       ['Filter by status', 'finished'],
     ])('changing %s goes back to the first page', async (label, value) => {
@@ -1702,7 +1702,7 @@ describe('pagination', () => {
 
 describe('searching lists', () => {
   const typeIn = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
-  const title = (id, name, overrides = {}) => libraryItem({ id, tmdb_id: id, title: name, ...overrides });
+  const title = (id, name, overrides = {}) => libraryItem({ id, source_id: id, title: name, ...overrides });
   const MIXED = [
     title(1, 'Dune'),
     title(2, 'Airbag', { media_type: 'song', artists: 'Radiohead', album_title: 'OK Computer' }),
@@ -1903,11 +1903,11 @@ describe('sorting and filtering a shelf', () => {
   const entry = (id, name, overrides = {}) =>
     libraryItem({
       id,
-      tmdb_id: id,
+      source_id: id,
       title: name,
       updated_at: `2026-01-0${id} 00:00:00`,
-      watched_sort_date: null,
-      watched_date: null,
+      finished_sort_date: null,
+      finished_date: null,
       season_counts: { want: 0, in_progress: 0, finished: 0 },
       ...overrides,
     });
@@ -1917,8 +1917,8 @@ describe('sorting and filtering a shelf', () => {
       rating: 5,
       year: '2010',
       release_date: '2010-05-01',
-      watched_sort_date: '2026-01-01',
-      watched_date: '2026-01-01',
+      finished_sort_date: '2026-01-01',
+      finished_date: '2026-01-01',
     }),
     entry(2, 'Alpha', {
       status: 'want',
@@ -1931,7 +1931,7 @@ describe('sorting and filtering a shelf', () => {
       rating: 9.5,
       year: '2024',
       release_date: '2024-03-01',
-      watched_sort_date: '2026-11-03',
+      finished_sort_date: '2026-11-03',
       media_type: 'album',
     }),
     entry(4, 'Delta', {
@@ -1939,8 +1939,8 @@ describe('sorting and filtering a shelf', () => {
       rating: 0,
       year: '1990',
       release_date: null,
-      watched_sort_date: '2020-06-01',
-      watched_date: '2020-06-01',
+      finished_sort_date: '2020-06-01',
+      finished_date: '2020-06-01',
       media_type: 'tv',
     }),
   ];
@@ -1963,8 +1963,8 @@ describe('sorting and filtering a shelf', () => {
   });
 
   test.each([
-    ['watched:desc', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
-    ['watched:asc', ['Delta', 'Charlie', 'Bravo', 'Alpha']],
+    ['finished:desc', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
+    ['finished:asc', ['Delta', 'Charlie', 'Bravo', 'Alpha']],
     ['release:desc', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
     ['release:asc', ['Delta', 'Charlie', 'Bravo', 'Alpha']],
     ['status', ['Bravo', 'Alpha', 'Charlie', 'Delta']],
@@ -2083,7 +2083,7 @@ describe('sorting and filtering a shelf', () => {
 
   test('rows show the date being sorted by', async () => {
     await openShelf();
-    choose('Sort by', 'watched:desc');
+    choose('Sort by', 'finished:desc');
     expect(screen.getByText('Watched Jan 1, 2026')).toBeInTheDocument();
     choose('Sort by', 'release:desc');
     expect(screen.getByText(/Released May 1, 2010/)).toBeInTheDocument();
@@ -2145,8 +2145,8 @@ describe('sorting My Library', () => {
   });
 
   test.each([
-    ['watched:desc', 'watched', 'desc'],
-    ['watched:asc', 'watched', 'asc'],
+    ['finished:desc', 'finished', 'desc'],
+    ['finished:asc', 'finished', 'asc'],
     ['release:desc', 'release', 'desc'],
     ['release:asc', 'release', 'asc'],
     ['rating:desc', 'rating', 'desc'],
@@ -2203,12 +2203,12 @@ describe('sorting My Library', () => {
     goTo('My Library');
     await screen.findByText(/Nothing logged yet/);
 
-    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'watched:asc' } });
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'finished:asc' } });
     fireEvent.change(screen.getByLabelText('Filter by type'), { target: { value: 'tv' } });
 
     await waitFor(() =>
       expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), {
-        params: { media_type: 'tv', sort: 'watched', order: 'asc' },
+        params: { media_type: 'tv', sort: 'finished', order: 'asc' },
       })
     );
   });
@@ -2216,8 +2216,8 @@ describe('sorting My Library', () => {
   test('titles appear in the order the backend sends', async () => {
     setRoutes({
       library: [
-        libraryItem({ id: 1, tmdb_id: 1, title: 'First' }),
-        libraryItem({ id: 2, tmdb_id: 2, title: 'Second' }),
+        libraryItem({ id: 1, source_id: 1, title: 'First' }),
+        libraryItem({ id: 2, source_id: 2, title: 'Second' }),
       ],
     });
     render(<App />);
@@ -2233,7 +2233,7 @@ describe('sorting My Library', () => {
       library: [
         libraryItem({
           status: 'finished',
-          watched_date: '2026-11-03',
+          finished_date: '2026-11-03',
           release_date: '2021-09-15',
         }),
       ],
@@ -2243,7 +2243,7 @@ describe('sorting My Library', () => {
     await screen.findByText('Dune');
     expect(screen.queryByText(/^Watched .*2026/)).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'watched:desc' } });
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'finished:desc' } });
     expect(await screen.findByText('Watched Nov 3, 2026')).toBeInTheDocument();
     expect(screen.queryByText('Watched', { selector: 'p' })).not.toBeInTheDocument();
 
@@ -2263,10 +2263,10 @@ describe('sorting My Library', () => {
   });
 
   test('titles with no watched date show none', async () => {
-    setRoutes({ library: [libraryItem({ status: 'want', watched_date: null })] });
+    setRoutes({ library: [libraryItem({ status: 'want', finished_date: null })] });
     render(<App />);
     goTo('My Library');
-    fireEvent.change(await screen.findByLabelText('Sort by'), { target: { value: 'watched:desc' } });
+    fireEvent.change(await screen.findByLabelText('Sort by'), { target: { value: 'finished:desc' } });
 
     await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(/^Watched /)).not.toBeInTheDocument();
@@ -2341,8 +2341,8 @@ describe('status words', () => {
 
 test('a library title opens using its TMDB id', async () => {
   setRoutes({
-    library: [libraryItem({ id: 50, tmdb_id: 77, status: 'finished' })],
-    item: libraryItem({ id: 50, tmdb_id: 77, status: 'finished' }),
+    library: [libraryItem({ id: 50, source_id: 77, status: 'finished' })],
+    item: libraryItem({ id: 50, source_id: 77, status: 'finished' }),
   });
   render(<App />);
   goTo('My Library');
@@ -2397,7 +2397,7 @@ function twoItemShelf() {
     ...SHELF,
     items: [
       libraryItem({ id: 50, title: 'Dune', rating: 8.5 }),
-      libraryItem({ id: 51, tmdb_id: 2, media_type: 'tv', title: 'Breaking Bad' }),
+      libraryItem({ id: 51, source_id: 2, media_type: 'tv', title: 'Breaking Bad' }),
     ],
   };
 }

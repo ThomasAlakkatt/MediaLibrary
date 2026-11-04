@@ -18,8 +18,8 @@ import TitleDetail from './TitleDetail';
 
 const SORT_OPTIONS = [
   { value: 'changed:desc', label: 'Recently changed' },
-  { value: 'watched:desc', label: 'Date finished: newest first' },
-  { value: 'watched:asc', label: 'Date finished: oldest first' },
+  { value: 'finished:desc', label: 'Date finished: newest first' },
+  { value: 'finished:asc', label: 'Date finished: oldest first' },
   { value: 'release:desc', label: 'Release date: newest first' },
   { value: 'release:asc', label: 'Release date: oldest first' },
   { value: 'status', label: 'Status' },
@@ -163,9 +163,9 @@ export default function LibraryView() {
               item={item}
               onSelect={setSelected}
             >
-              {sortKind === 'watched' && item.watched_date ? (
+              {sortKind === 'finished' && item.finished_date ? (
                 <p className="result-year">
-                  {statusLabels(item.media_type).finished} {formatDate(item.watched_date)}
+                  {statusLabels(item.media_type).finished} {formatDate(item.finished_date)}
                 </p>
               ) : (
                 logStatusText(item) && <p className="result-year">{logStatusText(item)}</p>

@@ -4,9 +4,9 @@ import pytest
 
 import library_service
 
-DUNE = {"media_type": "movie", "tmdb_id": 1, "title": "Dune", "year": "2021", "poster_path": "/d.jpg"}
-BB = {"media_type": "tv", "tmdb_id": 2, "title": "Breaking Bad", "year": "2008", "poster_path": "/b.jpg"}
-HEAT = {"media_type": "movie", "tmdb_id": 3, "title": "Heat", "year": "1995", "poster_path": None}
+DUNE = {"media_type": "movie", "source_id": 1, "title": "Dune", "year": "2021", "poster_path": "/d.jpg"}
+BB = {"media_type": "tv", "source_id": 2, "title": "Breaking Bad", "year": "2008", "poster_path": "/b.jpg"}
+HEAT = {"media_type": "movie", "source_id": 3, "title": "Heat", "year": "1995", "poster_path": None}
 
 
 def details(title):
@@ -15,7 +15,7 @@ def details(title):
 
 def save_log(client, title, **log):
     return client.put(
-        f"/library/{title['media_type']}/{title['tmdb_id']}", json={**details(title), **log}
+        f"/library/{title['media_type']}/{title['source_id']}", json={**details(title), **log}
     )
 
 
@@ -75,8 +75,8 @@ def test_saving_replaces_the_previous_log(client):
 
 
 def test_same_id_for_a_movie_and_a_show_stays_separate(client):
-    save_log(client, {**DUNE, "tmdb_id": 5}, rating=1)
-    save_log(client, {**BB, "tmdb_id": 5}, rating=9)
+    save_log(client, {**DUNE, "source_id": 5}, rating=1)
+    save_log(client, {**BB, "source_id": 5}, rating=9)
     assert client.get("/library/movie/5").json()["title"] == "Dune"
     assert client.get("/library/tv/5").json()["title"] == "Breaking Bad"
 
@@ -411,7 +411,7 @@ def test_upgrade_removes_season_ratings_and_keeps_the_rest(tmp_path, monkeypatch
     connection = sqlite3.connect(tmp_path / "v1.db")
     columns = [row[1] for row in connection.execute("PRAGMA table_info(season_logs)")]
     assert columns == ["item_id", "season_number", "status", "finished_on"]
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
     connection.close()
 
 
@@ -444,10 +444,10 @@ def test_upgrade_to_version_2_keeps_a_copy_of_the_old_file(tmp_path, monkeypatch
     backup.close()
 
 
-def movie(tmdb_id, title, release_date=None, year=None):
+def movie(source_id, title, release_date=None, year=None):
     return {
         "media_type": "movie",
-        "tmdb_id": tmdb_id,
+        "source_id": source_id,
         "title": title,
         "release_date": release_date,
         "year": year or (release_date[:4] if release_date else None),
@@ -456,7 +456,7 @@ def movie(tmdb_id, title, release_date=None, year=None):
 
 
 def log_movie(client, title, **log):
-    url = f"/library/{title['media_type']}/{title['tmdb_id']}"
+    url = f"/library/{title['media_type']}/{title['source_id']}"
     body = {key: title[key] for key in ("title", "release_date", "year")}
     assert client.put(url, json={**body, **log}).status_code == 200
 
@@ -479,8 +479,8 @@ def fixed_today(monkeypatch):
 def no_tmdb_lookups(monkeypatch):
     looked_up = []
 
-    def fake_lookup(media_type, tmdb_id):
-        looked_up.append((media_type, tmdb_id))
+    def fake_lookup(media_type, source_id):
+        looked_up.append((media_type, source_id))
         return None
 
     monkeypatch.setattr(library_service, "get_release_date", fake_lookup)
@@ -493,8 +493,8 @@ def test_sort_by_date_watched(client, fixed_today):
     log_movie(client, movie(3, "Recent"), status="finished", finished_on="2026-10-01")
     log_movie(client, movie(4, "Watching"), status="in_progress")
 
-    assert library_titles(client, sort="watched") == ["Upcoming", "Watching", "Recent", "Older"]
-    assert library_titles(client, sort="watched", order="asc") == [
+    assert library_titles(client, sort="finished") == ["Upcoming", "Watching", "Recent", "Older"]
+    assert library_titles(client, sort="finished", order="asc") == [
         "Older",
         "Recent",
         "Watching",
@@ -506,43 +506,43 @@ def test_being_watched_counts_as_today_even_against_future_dates(client, fixed_t
     log_movie(client, movie(1, "Watching"), status="in_progress")
     log_movie(client, movie(2, "Yesterday"), status="finished", finished_on="2026-11-02")
     log_movie(client, movie(3, "Tomorrow"), status="finished", finished_on="2026-11-04")
-    assert library_titles(client, sort="watched") == ["Tomorrow", "Watching", "Yesterday"]
+    assert library_titles(client, sort="finished") == ["Tomorrow", "Watching", "Yesterday"]
 
 
 def test_being_watched_ignores_an_old_date(client, fixed_today):
     log_movie(client, movie(1, "Rewatching"), status="in_progress", finished_on="2001-01-01")
     log_movie(client, movie(2, "Recent"), status="finished", finished_on="2026-10-01")
-    assert library_titles(client, sort="watched") == ["Rewatching", "Recent"]
+    assert library_titles(client, sort="finished") == ["Rewatching", "Recent"]
 
 
 def test_a_title_with_no_date_of_any_kind_is_the_latest(client, fixed_today):
     log_movie(client, movie(1, "Dated"), status="finished", finished_on="2026-11-03")
     log_movie(client, movie(2, "Finished No Date"), status="finished")
     log_movie(client, movie(3, "Only Rated"), rating=8)
-    assert library_titles(client, sort="watched")[-1] == "Dated"
+    assert library_titles(client, sort="finished")[-1] == "Dated"
 
 
-def test_season_logs_give_a_show_its_watched_date(client, fixed_today):
+def test_season_logs_give_a_show_its_finished_date(client, fixed_today):
     log_movie(client, movie(1, "Between"), status="finished", finished_on="2025-06-01")
     log_movie(client, movie(2, "Early"), status="finished", finished_on="2020-01-01")
     url = "/library/tv/9/seasons"
     client.put(f"{url}/1", json={**details(BB), "status": "finished", "finished_on": "2019-01-01"})
     client.put(f"{url}/2", json={**details(BB), "status": "finished", "finished_on": "2026-01-01"})
 
-    assert library_titles(client, sort="watched") == ["Breaking Bad", "Between", "Early"]
+    assert library_titles(client, sort="finished") == ["Breaking Bad", "Between", "Early"]
 
 
 def test_a_season_being_watched_counts_as_today(client, fixed_today):
     log_movie(client, movie(1, "Recent"), status="finished", finished_on="2026-10-01")
     client.put("/library/tv/9/seasons/1", json={**details(BB), "status": "in_progress"})
-    assert library_titles(client, sort="watched") == ["Breaking Bad", "Recent"]
+    assert library_titles(client, sort="finished") == ["Breaking Bad", "Recent"]
 
 
-def test_watched_date_is_only_a_real_finished_date(client, fixed_today):
+def test_finished_date_is_only_a_real_finished_date(client, fixed_today):
     log_movie(client, movie(1, "Done"), status="finished", finished_on="2026-10-01")
     log_movie(client, movie(2, "Watching"), status="in_progress", finished_on="2001-01-01")
     log_movie(client, movie(3, "Upcoming"), status="want")
-    found = {i["title"]: i["watched_date"] for i in client.get("/library", params={"sort": "watched"}).json()}
+    found = {i["title"]: i["finished_date"] for i in client.get("/library", params={"sort": "finished"}).json()}
     assert found == {"Done": "2026-10-01", "Watching": None, "Upcoming": None}
 
 
@@ -570,9 +570,9 @@ def test_release_sort_uses_the_full_date_within_a_year(client):
 def test_release_sort_fills_in_missing_dates_once(client, monkeypatch):
     looked_up = []
 
-    def fake_lookup(media_type, tmdb_id):
-        looked_up.append(tmdb_id)
-        return {1: "2024-10-01", 2: "2024-03-01"}.get(tmdb_id)
+    def fake_lookup(media_type, source_id):
+        looked_up.append(source_id)
+        return {1: "2024-10-01", 2: "2024-03-01"}.get(source_id)
 
     monkeypatch.setattr(library_service, "get_release_date", fake_lookup)
     log_movie(client, movie(1, "October", year="2024"), rating=1)
@@ -594,7 +594,7 @@ def test_release_sort_falls_back_to_the_year(client, no_tmdb_lookups):
 def test_other_sorts_make_no_tmdb_requests(client, no_tmdb_lookups):
     log_movie(client, movie(1, "Year Only", year="2030"), rating=1)
     library_titles(client)
-    library_titles(client, sort="watched")
+    library_titles(client, sort="finished")
     assert no_tmdb_lookups == []
 
 
@@ -608,7 +608,7 @@ def test_sorting_works_with_filters(client, fixed_today):
     log_movie(client, movie(1, "A"), status="finished", finished_on="2020-01-01")
     log_movie(client, movie(2, "B"), status="finished", finished_on="2021-01-01")
     log_movie(client, movie(3, "C"), status="want")
-    assert library_titles(client, sort="watched", status="finished") == ["B", "A"]
+    assert library_titles(client, sort="finished", status="finished") == ["B", "A"]
 
 
 @pytest.mark.parametrize("params", [{"sort": "popularity"}, {"order": "sideways"}])
@@ -679,7 +679,7 @@ def test_an_album_is_logged_like_a_movie(client):
 
 def test_album_and_movie_with_the_same_id_stay_separate(client):
     client.put("/library/album/5", json={**ALBUM, "rating": 1})
-    save_log(client, {**DUNE, "tmdb_id": 5}, rating=9)
+    save_log(client, {**DUNE, "source_id": 5}, rating=9)
     assert client.get("/library/album/5").json()["title"] == "OK Computer"
     assert client.get("/library/movie/5").json()["title"] == "Dune"
 
@@ -762,9 +762,9 @@ def test_the_generic_routes_do_not_accept_songs(client):
 def test_songs_go_on_shelves_with_movies_and_albums(client):
     shelf_id = make_shelf(client)
     add(client, shelf_id, DUNE)
-    add(client, shelf_id, {"media_type": "album", "tmdb_id": 21491, **ALBUM})
-    add(client, shelf_id, {"media_type": "song", "tmdb_id": 21491, "track_index": 6, "title": "Karma Police"})
-    add(client, shelf_id, {"media_type": "song", "tmdb_id": 21491, "track_index": 0, "title": "Airbag"})
+    add(client, shelf_id, {"media_type": "album", "source_id": 21491, **ALBUM})
+    add(client, shelf_id, {"media_type": "song", "source_id": 21491, "track_index": 6, "title": "Karma Police"})
+    add(client, shelf_id, {"media_type": "song", "source_id": 21491, "track_index": 0, "title": "Airbag"})
 
     shelf = client.get(f"/shelves/{shelf_id}").json()
     assert titles(shelf) == ["Dune", "OK Computer", "Karma Police", "Airbag"]
@@ -793,7 +793,7 @@ def test_music_sorts_by_date_finished_with_everything_else(client, fixed_today):
     client.put("/library/album/21491", json={**ALBUM, "status": "finished", "finished_on": "2026-01-01"})
     save_songs(client, tracks=TRACKS[:1], status="in_progress")
     log_movie(client, movie(1, "Heat"), status="finished", finished_on="2026-06-01")
-    assert library_titles(client, sort="watched") == ["Airbag", "Heat", "OK Computer"]
+    assert library_titles(client, sort="finished") == ["Airbag", "Heat", "OK Computer"]
 
 
 def test_upgrade_to_music_keeps_ids_shelves_and_seasons(old_database):
@@ -825,11 +825,11 @@ def test_shelf_items_include_what_sorting_needs(client, fixed_today):
 
     items = {i["title"]: i for i in client.get(f"/shelves/{shelf_id}").json()["items"]}
 
-    assert items["Dune"]["watched_date"] == "2026-01-01"
-    assert items["Dune"]["watched_sort_date"] == "2026-01-01"
-    assert items["Heat"]["watched_date"] is None
-    assert items["Heat"]["watched_sort_date"] == "2026-11-03"
-    assert items["Breaking Bad"]["watched_sort_date"] == "2026-11-03"
+    assert items["Dune"]["finished_date"] == "2026-01-01"
+    assert items["Dune"]["finished_sort_date"] == "2026-01-01"
+    assert items["Heat"]["finished_date"] is None
+    assert items["Heat"]["finished_sort_date"] == "2026-11-03"
+    assert items["Breaking Bad"]["finished_sort_date"] == "2026-11-03"
     assert items["Breaking Bad"]["season_counts"]["in_progress"] == 1
 
 
@@ -837,14 +837,14 @@ def test_an_unlogged_shelf_item_has_no_dates(client):
     shelf_id = make_shelf(client)
     add(client, shelf_id, DUNE)
     item = client.get(f"/shelves/{shelf_id}").json()["items"][0]
-    assert (item["watched_date"], item["watched_sort_date"]) == (None, None)
+    assert (item["finished_date"], item["finished_sort_date"]) == (None, None)
 
 
 def test_shelf_only_looks_up_release_dates_when_asked(client, monkeypatch):
     looked_up = []
 
-    def fake_lookup(media_type, tmdb_id):
-        looked_up.append(tmdb_id)
+    def fake_lookup(media_type, source_id):
+        looked_up.append(source_id)
         return "2021-09-15"
 
     monkeypatch.setattr(library_service, "get_release_date", fake_lookup)
@@ -903,7 +903,7 @@ def test_ties_stay_most_recently_changed_first(client):
     log_movie(client, movie(1, "Older"), rating=8)
     log_movie(client, movie(2, "Newer"), rating=8)
     with library_service.get_connection() as connection:
-        connection.execute("UPDATE library_items SET updated_at = '2020-01-01' WHERE tmdb_id = 1")
+        connection.execute("UPDATE library_items SET updated_at = '2020-01-01' WHERE source_id = 1")
     assert library_titles(client, sort="rating") == ["Newer", "Older"]
 
 
@@ -912,3 +912,19 @@ def test_new_sorts_work_with_filters(client):
     log_movie(client, movie(2, "High"), status="finished", rating=9)
     log_movie(client, movie(3, "Other"), status="want", rating=10)
     assert library_titles(client, sort="rating", status="finished") == ["High", "Low"]
+
+
+def test_upgrade_renames_the_id_column_and_keeps_the_data(tmp_path, monkeypatch):
+    make_version_1_database(tmp_path / "v1.db", monkeypatch, "")
+    with upgraded_client() as client:
+        item = client.get("/library/tv/2").json()
+        assert item["source_id"] == 2
+        assert "tmdb_id" not in item
+        assert (item["id"], item["rating"], item["shelf_ids"]) == (7, 9.5, [3])
+    connection = sqlite3.connect(tmp_path / "v1.db")
+    columns = [row[1] for row in connection.execute("PRAGMA table_info(library_items)")]
+    assert "source_id" in columns and "tmdb_id" not in columns
+    connection.close()
+    backup = sqlite3.connect(f"{tmp_path / 'v1.db'}-before-source-id-rename")
+    assert backup.execute("SELECT tmdb_id FROM library_items").fetchone()[0] == 2
+    backup.close()

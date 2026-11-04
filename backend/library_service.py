@@ -31,15 +31,15 @@ IS_LOGGED_SQL = """(
 
 
 # Adds the title if it's new, or refreshes its TMDB details if not. Returns its library_items id.
-def _ensure_item(connection, media_type, tmdb_id, details, track_index=-1):
+def _ensure_item(connection, media_type, source_id, details, track_index=-1):
     connection.execute(
         """
         INSERT INTO library_items (
-            media_type, tmdb_id, track_index, title, artists, album_title,
+            media_type, source_id, track_index, title, artists, album_title,
             year, release_date, poster_path, overview
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (media_type, tmdb_id, track_index) DO UPDATE SET
+        ON CONFLICT (media_type, source_id, track_index) DO UPDATE SET
             title = excluded.title,
             artists = excluded.artists,
             album_title = excluded.album_title,
@@ -50,7 +50,7 @@ def _ensure_item(connection, media_type, tmdb_id, details, track_index=-1):
         """,
         (
             media_type,
-            tmdb_id,
+            source_id,
             track_index,
             details["title"],
             details.get("artists"),
@@ -62,8 +62,8 @@ def _ensure_item(connection, media_type, tmdb_id, details, track_index=-1):
         ),
     )
     row = connection.execute(
-        "SELECT id FROM library_items WHERE media_type = ? AND tmdb_id = ? AND track_index = ?",
-        (media_type, tmdb_id, track_index),
+        "SELECT id FROM library_items WHERE media_type = ? AND source_id = ? AND track_index = ?",
+        (media_type, source_id, track_index),
     ).fetchone()
     return row["id"]
 
@@ -87,10 +87,10 @@ def _touch_item(connection, item_id):
     )
 
 
-def _load_item(connection, media_type, tmdb_id, track_index=-1):
+def _load_item(connection, media_type, source_id, track_index=-1):
     row = connection.execute(
-        "SELECT * FROM library_items WHERE media_type = ? AND tmdb_id = ? AND track_index = ?",
-        (media_type, tmdb_id, track_index),
+        "SELECT * FROM library_items WHERE media_type = ? AND source_id = ? AND track_index = ?",
+        (media_type, source_id, track_index),
     ).fetchone()
     if row is None:
         return None
@@ -115,9 +115,9 @@ def _load_item(connection, media_type, tmdb_id, track_index=-1):
     return item
 
 
-def get_item(media_type, tmdb_id, track_index=-1):
+def get_item(media_type, source_id, track_index=-1):
     with get_connection() as connection:
-        item = _load_item(connection, media_type, tmdb_id, track_index)
+        item = _load_item(connection, media_type, source_id, track_index)
     if item is None:
         raise ItemNotFound()
     return item
@@ -129,13 +129,13 @@ def _fill_missing_release_dates():
     with get_connection() as connection:
         missing = connection.execute(
             """
-            SELECT id, media_type, tmdb_id FROM library_items
+            SELECT id, media_type, source_id FROM library_items
             WHERE release_date IS NULL AND media_type IN ('movie', 'tv')
             """
         ).fetchall()
 
     for row in missing:
-        release_date = get_release_date(row["media_type"], row["tmdb_id"])
+        release_date = get_release_date(row["media_type"], row["source_id"])
         if release_date:
             with get_connection() as connection:
                 connection.execute(
@@ -151,7 +151,7 @@ def _finished_date(item, seasons):
     return max((s["finished_on"] for s in seasons if s["finished_on"]), default=None)
 
 
-def _is_being_watched(item, seasons):
+def _is_in_progress(item, seasons):
     if item["status"] == "in_progress":
         return True
     if item["status"] or item["finished_on"]:
@@ -167,20 +167,20 @@ def _load_seasons_by_item(connection):
 
 
 # Adds what's worked out from a title's log and season logs, for showing and sorting it anywhere:
-# season_counts lets a show logged only by season say something useful about itself, watched_date is
-# the date it was really finished, and watched_sort_date counts anything still being watched as today.
+# season_counts lets a show logged only by season say something useful about itself, finished_date is
+# the date it was really finished, and finished_sort_date counts anything still in progress as today.
 def _add_log_summaries(items, seasons_by_item):
     today = date.today().isoformat()
     for item in items:
         seasons = seasons_by_item.get(item["id"], [])
-        being_watched = _is_being_watched(item, seasons)
+        in_progress = _is_in_progress(item, seasons)
         finished = _finished_date(item, seasons)
         item["season_counts"] = {
             season_status: sum(1 for season in seasons if season["status"] == season_status)
             for season_status in ("want", "in_progress", "finished")
         }
-        item["watched_date"] = None if being_watched else finished
-        item["watched_sort_date"] = today if being_watched else finished
+        item["finished_date"] = None if in_progress else finished
+        item["finished_sort_date"] = today if in_progress else finished
 
 
 # Both date sorts treat a title with no date as the latest of all. Dates are written YYYY-MM-DD, or
@@ -194,7 +194,7 @@ def _sort_by_date(items, date_of, order):
     return sorted(items, key=sort_key, reverse=order == "desc")
 
 
-# Being watched comes first, then waiting to be watched, then finished, then no status at all. A show
+# In progress comes first, then not started, then finished, then no status at all. A show
 # logged only by season goes by its seasons.
 def _status_rank(item):
     status_order = ("in_progress", "want", "finished")
@@ -206,7 +206,7 @@ def _status_rank(item):
     return len(status_order)
 
 
-# sort is "changed", "watched", "release", "status", "rating" or "title". order is "desc" (newest or
+# sort is "changed", "finished", "release", "status", "rating" or "title". order is "desc" (newest or
 # highest first) or "asc", and doesn't apply to status or title, which each have one natural order.
 def list_library(media_type=None, status=None, sort="changed", order="desc"):
     if sort == "release":
@@ -240,8 +240,8 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
     items = [dict(row) for row in rows]
     _add_log_summaries(items, seasons_by_item)
 
-    if sort == "watched":
-        return _sort_by_date(items, lambda item: item["watched_sort_date"], order)
+    if sort == "finished":
+        return _sort_by_date(items, lambda item: item["finished_sort_date"], order)
 
     if sort == "release":
         return _sort_by_date(items, lambda item: item["release_date"] or item["year"], order)
@@ -264,9 +264,9 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
 
 
 # Replaces a title's log. Returns the saved title, or None if nothing about it is left to keep.
-def save_log(media_type, tmdb_id, details, log, track_index=-1):
+def save_log(media_type, source_id, details, log, track_index=-1):
     with get_connection() as connection:
-        item_id = _ensure_item(connection, media_type, tmdb_id, details, track_index)
+        item_id = _ensure_item(connection, media_type, source_id, details, track_index)
         connection.execute(
             """
             UPDATE library_items
@@ -276,7 +276,7 @@ def save_log(media_type, tmdb_id, details, log, track_index=-1):
             (*(log.get(field) for field in LOG_FIELDS), item_id),
         )
         _prune_item(connection, item_id)
-        return _load_item(connection, media_type, tmdb_id, track_index)
+        return _load_item(connection, media_type, source_id, track_index)
 
 
 # Saves the same log to each song in tracks, all or nothing, where each becomes its own entry.
@@ -306,16 +306,16 @@ def save_songs_log(album_id, album_details, tracks, log):
 def list_album_songs(album_id):
     with get_connection() as connection:
         rows = connection.execute(
-            "SELECT * FROM library_items WHERE media_type = 'song' AND tmdb_id = ? ORDER BY track_index",
+            "SELECT * FROM library_items WHERE media_type = 'song' AND source_id = ? ORDER BY track_index",
             (album_id,),
         ).fetchall()
     return [dict(row) for row in rows]
 
 
 # Clears a title's log and season logs, but leaves it on its shelves.
-def clear_log(media_type, tmdb_id, track_index=-1):
-    where = "media_type = ? AND tmdb_id = ? AND track_index = ?"
-    key = (media_type, tmdb_id, track_index)
+def clear_log(media_type, source_id, track_index=-1):
+    where = "media_type = ? AND source_id = ? AND track_index = ?"
+    key = (media_type, source_id, track_index)
     with get_connection() as connection:
         connection.execute(
             f"DELETE FROM season_logs WHERE item_id IN (SELECT id FROM library_items WHERE {where})",
@@ -326,20 +326,20 @@ def clear_log(media_type, tmdb_id, track_index=-1):
             UPDATE library_items
             SET status = NULL, rating = NULL, review = NULL, finished_on = NULL,
                 updated_at = datetime('now')
-            WHERE media_type = ? AND tmdb_id = ? AND track_index = ?
+            WHERE media_type = ? AND source_id = ? AND track_index = ?
             """,
             key,
         )
         row = connection.execute(f"SELECT id FROM library_items WHERE {where}", key).fetchone()
         if row is not None:
             _prune_item(connection, row["id"])
-        return _load_item(connection, media_type, tmdb_id, track_index)
+        return _load_item(connection, media_type, source_id, track_index)
 
 
 # Saves one season's log for a show. An empty log removes that season's entry.
-def save_season_log(tmdb_id, season_number, details, log):
+def save_season_log(source_id, season_number, details, log):
     with get_connection() as connection:
-        item_id = _ensure_item(connection, "tv", tmdb_id, details)
+        item_id = _ensure_item(connection, "tv", source_id, details)
         if any(log.get(field) is not None for field in ("status", "finished_on")):
             connection.execute(
                 """
@@ -358,7 +358,7 @@ def save_season_log(tmdb_id, season_number, details, log):
             )
         _touch_item(connection, item_id)
         _prune_item(connection, item_id)
-        return _load_item(connection, "tv", tmdb_id)
+        return _load_item(connection, "tv", source_id)
 
 
 def _require_shelf(connection, shelf_id):
@@ -447,10 +447,10 @@ def delete_shelf(shelf_id):
 
 
 # Adds a title to the end of a shelf, like a playlist. Adding one that's already there changes nothing.
-def add_to_shelf(shelf_id, media_type, tmdb_id, details, track_index=-1):
+def add_to_shelf(shelf_id, media_type, source_id, details, track_index=-1):
     with get_connection() as connection:
         _require_shelf(connection, shelf_id)
-        item_id = _ensure_item(connection, media_type, tmdb_id, details, track_index)
+        item_id = _ensure_item(connection, media_type, source_id, details, track_index)
         connection.execute(
             """
             INSERT OR IGNORE INTO shelf_items (shelf_id, item_id, position)

@@ -10,7 +10,7 @@ DEFAULT_DB_PATH = Path(__file__).parent / "medialibrary.db"
 # can be shown without calling TMDB or Discogs. Log fields are all optional because a title can be on a
 # shelf without being logged. A rating is any number from 0 to 10.
 #
-# tmdb_id is the source's ID: TMDB's for movies and shows, and the Discogs master's for albums and songs.
+# source_id is the source's ID: TMDB's for movies and shows, and the Discogs master's for albums and songs.
 # poster_path is a TMDB path for movies and shows, and a full image address for music. A song has no ID
 # of its own, so it's identified by its album's ID plus its place in the tracklist (track_index, which
 # stays -1 for everything else).
@@ -18,7 +18,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS library_items (
     id INTEGER PRIMARY KEY,
     media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv', 'album', 'song')),
-    tmdb_id INTEGER NOT NULL,
+    source_id INTEGER NOT NULL,
     track_index INTEGER NOT NULL DEFAULT -1,
     title TEXT NOT NULL,
     artists TEXT,
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS library_items (
     finished_on TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (media_type, tmdb_id, track_index)
+    UNIQUE (media_type, source_id, track_index)
 );
 
 CREATE TABLE IF NOT EXISTS season_logs (
@@ -80,7 +80,7 @@ def get_connection():
 
 
 # Stored in the database file, so an older library can be upgraded when the app starts.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 # Version 0 only allowed ratings of 0.5 and up. SQLite can't edit a CHECK rule in place, so each table
@@ -230,6 +230,15 @@ def _upgrade_to_version_4():
         connection.close()
 
 
+# Version 4 called source_id tmdb_id from when only TMDB was used. SQLite renames a column in place, and it
+# happens in one step, so the data itself isn't touched.
+def _upgrade_to_version_5():
+    path = _db_path()
+    shutil.copy2(path, f"{path}-before-source-id-rename")
+    with get_connection() as connection:
+        connection.execute("ALTER TABLE library_items RENAME COLUMN tmdb_id TO source_id")
+
+
 def init_db():
     with get_connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -245,6 +254,8 @@ def init_db():
         _upgrade_to_version_3()
     if has_library and version < 4:
         _upgrade_to_version_4()
+    if has_library and version < 5:
+        _upgrade_to_version_5()
 
     with get_connection() as connection:
         connection.executescript(SCHEMA)

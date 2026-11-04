@@ -159,7 +159,7 @@ class SongsLogRequest(LogRequest):
 
 class ShelfItemRequest(TitleDetails):
     media_type: MediaType
-    tmdb_id: int
+    source_id: int
     track_index: int = -1
 
 
@@ -240,7 +240,7 @@ def album(album_id: int):
 def library(
     media_type: Optional[MediaType] = None,
     status: Optional[Status] = None,
-    sort: Literal["changed", "watched", "release", "status", "rating", "title"] = "changed",
+    sort: Literal["changed", "finished", "release", "status", "rating", "title"] = "changed",
     order: Literal["desc", "asc"] = "desc",
 ):
     return library_service.list_library(media_type, status, sort, order)
@@ -276,28 +276,28 @@ def clear_song_log(album_id: int, track_index: int):
     return library_service.clear_log("song", album_id, track_index)
 
 
-@app.get("/library/{media_type}/{tmdb_id}")
-def library_item(media_type: LoggableType, tmdb_id: int):
-    return library_service.get_item(media_type, tmdb_id)
+@app.get("/library/{media_type}/{source_id}")
+def library_item(media_type: LoggableType, source_id: int):
+    return library_service.get_item(media_type, source_id)
 
 
 # Replaces a title's log. Returns null if that leaves nothing to keep.
-@app.put("/library/{media_type}/{tmdb_id}")
-def save_log(media_type: LoggableType, tmdb_id: int, body: LogRequest):
+@app.put("/library/{media_type}/{source_id}")
+def save_log(media_type: LoggableType, source_id: int, body: LogRequest):
     details, log = _split_details(body, ("status", "rating", "review", "finished_on"))
-    return library_service.save_log(media_type, tmdb_id, details, log)
+    return library_service.save_log(media_type, source_id, details, log)
 
 
 # Clears a title's log and season logs, leaving it on its shelves. Returns null if that leaves nothing.
-@app.delete("/library/{media_type}/{tmdb_id}")
-def clear_log(media_type: LoggableType, tmdb_id: int):
-    return library_service.clear_log(media_type, tmdb_id)
+@app.delete("/library/{media_type}/{source_id}")
+def clear_log(media_type: LoggableType, source_id: int):
+    return library_service.clear_log(media_type, source_id)
 
 
-@app.put("/library/tv/{tmdb_id}/seasons/{season_number}")
-def save_season_log(tmdb_id: int, season_number: int, body: SeasonLogRequest):
+@app.put("/library/tv/{source_id}/seasons/{season_number}")
+def save_season_log(source_id: int, season_number: int, body: SeasonLogRequest):
     details, log = _split_details(body, ("status", "finished_on"))
-    return library_service.save_season_log(tmdb_id, season_number, details, log)
+    return library_service.save_season_log(source_id, season_number, details, log)
 
 
 @app.get("/shelves")
@@ -329,7 +329,7 @@ def delete_shelf(shelf_id: int):
 def add_to_shelf(shelf_id: int, body: ShelfItemRequest):
     details, _ = _split_details(body, ())
     return library_service.add_to_shelf(
-        shelf_id, body.media_type, body.tmdb_id, details, body.track_index
+        shelf_id, body.media_type, body.source_id, details, body.track_index
     )
 
 

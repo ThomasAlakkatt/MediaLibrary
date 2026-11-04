@@ -27,7 +27,7 @@ export function useLoggedTitles(results, openTitle) {
       .then((response) => {
         if (!current) return;
         setLogs(
-          Object.fromEntries(response.data.map((log) => [`${log.media_type}-${log.tmdb_id}`, log]))
+          Object.fromEntries(response.data.map((log) => [`${log.media_type}-${log.source_id}`, log]))
         );
       })
       .catch(() => {});

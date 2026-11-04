@@ -22,8 +22,8 @@ import TitleDetail from './TitleDetail';
 const SORT_OPTIONS = [
   { value: 'shelf', label: 'Shelf order' },
   { value: 'changed:desc', label: 'Recently changed' },
-  { value: 'watched:desc', label: 'Date finished: newest first' },
-  { value: 'watched:asc', label: 'Date finished: oldest first' },
+  { value: 'finished:desc', label: 'Date finished: newest first' },
+  { value: 'finished:asc', label: 'Date finished: oldest first' },
   { value: 'release:desc', label: 'Release date: newest first' },
   { value: 'release:asc', label: 'Release date: oldest first' },
   { value: 'status', label: 'Status' },
@@ -61,7 +61,7 @@ function sortItems(items, sortOption) {
   const direction = order === 'asc' ? 1 : -1;
   const comparers = {
     changed: (a, b) => compareDates(a.updated_at, b.updated_at, direction),
-    watched: (a, b) => compareDates(a.watched_sort_date, b.watched_sort_date, direction),
+    finished: (a, b) => compareDates(a.finished_sort_date, b.finished_sort_date, direction),
     release: (a, b) =>
       compareDates(a.release_date || a.year, b.release_date || b.year, direction),
     status: (a, b) => statusRank(a) - statusRank(b),
@@ -373,10 +373,10 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                     <span className="season-meta">
                       {[TYPE_LABELS[item.media_type], item.artists, item.year].filter(Boolean).join(' · ')}
                     </span>
-                    {(logStatusText(item) || sortKind === 'watched' || sortKind === 'release') && (
+                    {(logStatusText(item) || sortKind === 'finished' || sortKind === 'release') && (
                       <span className="season-meta">
-                        {sortKind === 'watched' && item.watched_date
-                          ? `${statusLabels(item.media_type).finished} ${formatDate(item.watched_date)}`
+                        {sortKind === 'finished' && item.finished_date
+                          ? `${statusLabels(item.media_type).finished} ${formatDate(item.finished_date)}`
                           : logStatusText(item)}
                         {sortKind === 'release' && (item.release_date || item.year) && (
                           <>
