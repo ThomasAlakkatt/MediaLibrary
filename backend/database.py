@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS library_items (
     tmdb_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     year TEXT,
+    release_date TEXT,
     poster_path TEXT,
     overview TEXT,
     status TEXT CHECK (status IN ('want', 'in_progress', 'finished')),
@@ -71,7 +72,7 @@ def get_connection():
 
 
 # Stored in the database file, so an older library can be upgraded when the app starts.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 # Version 0 only allowed ratings of 0.5 and up. SQLite can't edit a CHECK rule in place, so each table
@@ -159,6 +160,13 @@ def _upgrade_to_version_2():
         connection.close()
 
 
+# Version 2 only stored a release year. Adding a column leaves existing rows untouched, so this needs no
+# copy of the file. Existing titles get their dates from TMDB the first time they're sorted by release.
+def _upgrade_to_version_3():
+    with get_connection() as connection:
+        connection.execute("ALTER TABLE library_items ADD COLUMN release_date TEXT")
+
+
 def init_db():
     with get_connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -170,6 +178,8 @@ def init_db():
         _upgrade_to_version_1()
     if has_library and version < 2:
         _upgrade_to_version_2()
+    if has_library and version < 3:
+        _upgrade_to_version_3()
 
     with get_connection() as connection:
         connection.executescript(SCHEMA)

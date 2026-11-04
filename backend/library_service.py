@@ -1,6 +1,8 @@
 import sqlite3
+from datetime import date
 
 from database import get_connection
+from tmdb_service import get_release_date
 
 
 class ShelfNotFound(Exception):
@@ -32,11 +34,12 @@ IS_LOGGED_SQL = """(
 def _ensure_item(connection, media_type, tmdb_id, details):
     connection.execute(
         """
-        INSERT INTO library_items (media_type, tmdb_id, title, year, poster_path, overview)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO library_items (media_type, tmdb_id, title, year, release_date, poster_path, overview)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (media_type, tmdb_id) DO UPDATE SET
             title = excluded.title,
             year = excluded.year,
+            release_date = COALESCE(excluded.release_date, release_date),
             poster_path = excluded.poster_path,
             overview = excluded.overview
         """,
@@ -45,6 +48,7 @@ def _ensure_item(connection, media_type, tmdb_id, details):
             tmdb_id,
             details["title"],
             details.get("year"),
+            details.get("release_date"),
             details.get("poster_path"),
             details.get("overview"),
         ),
@@ -109,7 +113,62 @@ def get_item(media_type, tmdb_id):
     return item
 
 
-def list_library(media_type=None, status=None):
+# Titles logged before release dates were stored only have a year, so this fills in what's missing.
+# It's only worth the TMDB requests when sorting by release, and a failure just leaves the year in place.
+def _fill_missing_release_dates():
+    with get_connection() as connection:
+        missing = connection.execute(
+            "SELECT id, media_type, tmdb_id FROM library_items WHERE release_date IS NULL"
+        ).fetchall()
+
+    for row in missing:
+        release_date = get_release_date(row["media_type"], row["tmdb_id"])
+        if release_date:
+            with get_connection() as connection:
+                connection.execute(
+                    "UPDATE library_items SET release_date = ? WHERE id = ?",
+                    (release_date, row["id"]),
+                )
+
+
+# The date a title was finished: its own date, otherwise its most recent season's.
+def _finished_date(item, seasons):
+    if item["finished_on"]:
+        return item["finished_on"]
+    return max((s["finished_on"] for s in seasons if s["finished_on"]), default=None)
+
+
+def _is_being_watched(item, seasons):
+    if item["status"] == "in_progress":
+        return True
+    if item["status"] or item["finished_on"]:
+        return False
+    return any(s["status"] == "in_progress" for s in seasons)
+
+
+def _load_seasons_by_item(connection):
+    seasons = {}
+    for row in connection.execute("SELECT item_id, status, finished_on FROM season_logs"):
+        seasons.setdefault(row["item_id"], []).append(dict(row))
+    return seasons
+
+
+# Both date sorts treat a title with no date as the latest of all. Dates are written YYYY-MM-DD, or
+# just YYYY for a release year, so they compare correctly as text. Python keeps tied items in their
+# existing order, so ties stay most recently changed first.
+def _sort_by_date(items, date_of, order):
+    def sort_key(item):
+        item_date = date_of(item)
+        return (item_date is None, item_date or "")
+
+    return sorted(items, key=sort_key, reverse=order == "desc")
+
+
+# sort is "changed", "watched" or "release", and order is "desc" (newest first) or "asc".
+def list_library(media_type=None, status=None, sort="changed", order="desc"):
+    if sort == "release":
+        _fill_missing_release_dates()
+
     filters = [IS_LOGGED_SQL]
     params = []
     if media_type:
@@ -128,7 +187,28 @@ def list_library(media_type=None, status=None):
             """,
             params,
         ).fetchall()
-    return [dict(row) for row in rows]
+        seasons_by_item = _load_seasons_by_item(connection) if sort == "watched" else {}
+
+    items = [dict(row) for row in rows]
+
+    if sort == "watched":
+        today = date.today().isoformat()
+
+        def watched_sort_date(item):
+            seasons = seasons_by_item.get(item["id"], [])
+            # Something still being watched counts as watched today.
+            return today if _is_being_watched(item, seasons) else _finished_date(item, seasons)
+
+        for item in items:
+            seasons = seasons_by_item.get(item["id"], [])
+            being_watched = _is_being_watched(item, seasons)
+            item["watched_date"] = None if being_watched else _finished_date(item, seasons)
+        return _sort_by_date(items, watched_sort_date, order)
+
+    if sort == "release":
+        return _sort_by_date(items, lambda item: item["release_date"] or item["year"], order)
+
+    return items if order == "desc" else items[::-1]
 
 
 # Replaces a title's log. Returns the saved title, or None if nothing about it is left to keep.

@@ -54,11 +54,13 @@ def _year_from(date_string):
 # "first_air_date"), so every result is converted to one shape the frontend can treat alike.
 def _normalize_result(item, media_type):
     is_movie = media_type == "movie"
+    release_date = item.get("release_date") if is_movie else item.get("first_air_date")
     return {
         "id": item.get("id"),
         "media_type": media_type,
         "title": item.get("title") if is_movie else item.get("name"),
-        "year": _year_from(item.get("release_date") if is_movie else item.get("first_air_date")),
+        "year": _year_from(release_date),
+        "release_date": release_date or None,
         "overview": item.get("overview"),
         "poster_path": item.get("poster_path"),
         "rating": item.get("vote_average"),
@@ -87,6 +89,17 @@ def search_media(query, media_type="all", page=1):
         "page": data.get("page", page),
         "total_pages": data.get("total_pages", 0),
     }
+
+
+# Returns a title's release date, or None if TMDB doesn't have one or can't be reached.
+def get_release_date(media_type, tmdb_id):
+    try:
+        data = _tmdb_get(f"/{media_type}/{tmdb_id}")
+    except TMDBUnavailable:
+        return None
+    if data is None:
+        return None
+    return (data.get("release_date") if media_type == "movie" else data.get("first_air_date")) or None
 
 
 def get_show_details(show_id):

@@ -3,6 +3,7 @@ import axios from 'axios';
 import {
   API_URL,
   STATUS_LABELS,
+  formatDate,
   getErrorMessage,
   libraryItemToMedia,
 } from './api';
@@ -10,11 +11,20 @@ import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
 import MediaDetail from './MediaDetail';
 
+const SORT_OPTIONS = [
+  { value: 'changed:desc', label: 'Recently changed' },
+  { value: 'watched:desc', label: 'Date watched: newest first' },
+  { value: 'watched:asc', label: 'Date watched: oldest first' },
+  { value: 'release:desc', label: 'Release date: newest first' },
+  { value: 'release:asc', label: 'Release date: oldest first' },
+];
+
 export default function LibraryView() {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [mediaType, setMediaType] = useState('');
   const [status, setStatus] = useState('');
+  const [sortOption, setSortOption] = useState('changed:desc');
   const [selected, setSelected] = useState(null);
 
   // Also reloads when coming back from a title's page, since its log may have changed there.
@@ -24,6 +34,9 @@ export default function LibraryView() {
     const params = {};
     if (mediaType) params.media_type = mediaType;
     if (status) params.status = status;
+    if (sortOption !== 'changed:desc') {
+      [params.sort, params.order] = sortOption.split(':');
+    }
     axios
       .get(`${API_URL}/library`, { params })
       .then((response) => {
@@ -39,7 +52,7 @@ export default function LibraryView() {
     return () => {
       current = false;
     };
-  }, [mediaType, status, selected]);
+  }, [mediaType, status, sortOption, selected]);
 
   if (selected) {
     return (
@@ -53,12 +66,24 @@ export default function LibraryView() {
   }
 
   const isFiltered = Boolean(mediaType || status);
+  const sortKind = sortOption.split(':')[0];
 
   return (
     <section aria-label="my library" className="page">
       <div className="page-toolbar">
         <h2>My Library</h2>
         <div className="page-filters">
+          <select
+            aria-label="Sort by"
+            value={sortOption}
+            onChange={(event) => setSortOption(event.target.value)}
+          >
+            {SORT_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
           <select
             aria-label="Filter by type"
             value={mediaType}
@@ -100,7 +125,14 @@ export default function LibraryView() {
               item={item}
               onSelect={setSelected}
             >
-              {item.status && <p className="result-year">{STATUS_LABELS[item.status]}</p>}
+              {sortKind === 'watched' && item.watched_date ? (
+                <p className="result-year">Watched {formatDate(item.watched_date)}</p>
+              ) : (
+                item.status && <p className="result-year">{STATUS_LABELS[item.status]}</p>
+              )}
+              {sortKind === 'release' && (item.release_date || item.year) && (
+                <p className="result-year">Released {formatDate(item.release_date || item.year)}</p>
+              )}
               {item.rating !== null && <p className="my-rating">★ {item.rating} / 10</p>}
             </MediaCard>
           ))}

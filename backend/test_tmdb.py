@@ -93,6 +93,7 @@ def test_movies_and_shows_come_back_in_one_shape(client, monkeypatch):
             "media_type": "movie",
             "title": "Dune",
             "year": "2021",
+            "release_date": "2021-09-15",
             "overview": "Spice.",
             "poster_path": "/dune.jpg",
             "rating": 7.8,
@@ -103,6 +104,7 @@ def test_movies_and_shows_come_back_in_one_shape(client, monkeypatch):
             "media_type": "tv",
             "title": "Dune: Prophecy",
             "year": "2024",
+            "release_date": "2024-11-17",
             "overview": "Sisters.",
             "poster_path": None,
             "rating": 7.1,
@@ -228,3 +230,26 @@ def test_a_missing_show_is_a_404(client, monkeypatch):
     response = client.get("/shows/999")
     assert response.status_code == 404
     assert response.json() == {"detail": "Could not find that show."}
+
+
+@pytest.mark.parametrize(
+    "media_type, body, expected",
+    [
+        ("movie", {"release_date": "2021-09-15"}, "2021-09-15"),
+        ("tv", {"first_air_date": "2008-01-20"}, "2008-01-20"),
+        ("movie", {"release_date": ""}, None),
+        ("tv", {}, None),
+    ],
+)
+def test_get_release_date(monkeypatch, media_type, body, expected):
+    calls = fake_tmdb(monkeypatch, FakeResponse(body=body))
+    assert tmdb_service.get_release_date(media_type, 7) == expected
+    assert calls[0]["url"].endswith(f"/{media_type}/7")
+
+
+@pytest.mark.parametrize(
+    "response", [requests.exceptions.ConnectionError("down"), FakeResponse(status_code=500), FakeResponse(status_code=404)]
+)
+def test_get_release_date_failure_is_no_date(monkeypatch, response):
+    fake_tmdb(monkeypatch, response)
+    assert tmdb_service.get_release_date("movie", 7) is None

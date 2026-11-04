@@ -892,6 +892,120 @@ test('My Library filters by status', async () => {
   });
 });
 
+describe('sorting My Library', () => {
+  test('starts with the most recently changed, sending no sort', async () => {
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText(/Nothing logged yet/);
+
+    expect(screen.getByLabelText('Sort by')).toHaveValue('changed:desc');
+    expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), { params: {} });
+  });
+
+  test.each([
+    ['watched:desc', 'watched', 'desc'],
+    ['watched:asc', 'watched', 'asc'],
+    ['release:desc', 'release', 'desc'],
+    ['release:asc', 'release', 'asc'],
+  ])('choosing %s asks for that order', async (option, sort, order) => {
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText(/Nothing logged yet/);
+
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: option } });
+
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), {
+        params: { sort, order },
+      })
+    );
+  });
+
+  test('sorting combines with filters', async () => {
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText(/Nothing logged yet/);
+
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'watched:asc' } });
+    fireEvent.change(screen.getByLabelText('Filter by type'), { target: { value: 'tv' } });
+
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), {
+        params: { media_type: 'tv', sort: 'watched', order: 'asc' },
+      })
+    );
+  });
+
+  test('titles appear in the order the backend sends', async () => {
+    setRoutes({
+      library: [
+        libraryItem({ id: 1, tmdb_id: 1, title: 'First' }),
+        libraryItem({ id: 2, tmdb_id: 2, title: 'Second' }),
+      ],
+    });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText('First');
+
+    const shown = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(shown.indexOf('First')).toBeLessThan(shown.indexOf('Second'));
+  });
+
+  test('the date being sorted by shows on each card', async () => {
+    setRoutes({
+      library: [
+        libraryItem({
+          status: 'finished',
+          watched_date: '2026-11-03',
+          release_date: '2021-09-15',
+        }),
+      ],
+    });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText('Dune');
+    expect(screen.queryByText(/^Watched .*2026/)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'watched:desc' } });
+    expect(await screen.findByText('Watched Nov 3, 2026')).toBeInTheDocument();
+    expect(screen.queryByText('Watched', { selector: 'p' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'release:desc' } });
+    expect(await screen.findByText('Released Sep 15, 2021')).toBeInTheDocument();
+  });
+
+  test('a title with only a release year shows the year', async () => {
+    setRoutes({ library: [libraryItem({ rating: 1, release_date: null, year: '2021' })] });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText('Dune');
+
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'release:desc' } });
+
+    expect(await screen.findByText('Released 2021')).toBeInTheDocument();
+  });
+
+  test('titles with no watched date show none', async () => {
+    setRoutes({ library: [libraryItem({ status: 'want', watched_date: null })] });
+    render(<App />);
+    goTo('My Library');
+    fireEvent.change(await screen.findByLabelText('Sort by'), { target: { value: 'watched:desc' } });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/^Watched /)).not.toBeInTheDocument();
+  });
+
+  test('saving a log keeps the release date', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ rating: 8 }) });
+    await openFromSearch({ ...DUNE, release_date: '2021-09-15' });
+    fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1].release_date).toBe('2021-09-15');
+  });
+});
+
 test('a library title opens using its TMDB id', async () => {
   setRoutes({
     library: [libraryItem({ id: 50, tmdb_id: 77, status: 'finished' })],

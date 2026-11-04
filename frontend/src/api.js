@@ -37,6 +37,14 @@ export function ratingText(rating) {
   return rating === null || rating === undefined ? '' : String(rating);
 }
 
+// Shows 2026-11-03 as "Nov 3, 2026", or leaves a year alone. Built from its parts because new Date()
+// would read it as UTC, which is the previous day in the US.
+export function formatDate(text) {
+  const [year, month, day] = text.split('-').map(Number);
+  if (!month || !day) return text;
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+
 export function posterUrl(posterPath, size = 'w342') {
   return `https://image.tmdb.org/t/p/${size}${posterPath}`;
 }
@@ -46,6 +54,7 @@ export function titleDetails(media) {
   return {
     title: media.title,
     year: media.year,
+    release_date: media.release_date,
     poster_path: media.poster_path,
     overview: media.overview,
   };

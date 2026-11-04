@@ -127,6 +127,7 @@ ShelfName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 class TitleDetails(BaseModel):
     title: str = Field(min_length=1)
     year: Optional[str] = None
+    release_date: Optional[str] = None
     poster_path: Optional[str] = None
     overview: Optional[str] = None
 
@@ -159,7 +160,7 @@ class ShelfOrderRequest(BaseModel):
 
 def _split_details(body, log_fields):
     data = body.model_dump()
-    details = {key: data[key] for key in ("title", "year", "poster_path", "overview")}
+    details = {key: data[key] for key in ("title", "year", "release_date", "poster_path", "overview")}
     log = {key: data[key] for key in log_fields}
     if log.get("finished_on"):
         log["finished_on"] = log["finished_on"].isoformat()
@@ -213,10 +214,15 @@ def movies_for_release(release_id: int):
     )
 
 
-# Your logged movies and shows, most recently changed first.
+# Your logged movies and shows, most recently changed first unless a sort is chosen.
 @app.get("/library")
-def library(media_type: Optional[MediaType] = None, status: Optional[Status] = None):
-    return library_service.list_library(media_type, status)
+def library(
+    media_type: Optional[MediaType] = None,
+    status: Optional[Status] = None,
+    sort: Literal["changed", "watched", "release"] = "changed",
+    order: Literal["desc", "asc"] = "desc",
+):
+    return library_service.list_library(media_type, status, sort, order)
 
 
 @app.get("/library/{media_type}/{tmdb_id}")
