@@ -172,7 +172,7 @@ export default function LibraryView() {
 
       <ListSearch
         label="Search your library"
-        placeholder="Search your library by title, artist or author"
+        placeholder="Search your library"
         value={query}
         onChange={(value) => {
           setQuery(value);

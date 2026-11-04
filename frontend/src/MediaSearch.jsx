@@ -6,7 +6,7 @@ import MediaCard, { LoggedBadge, useLoggedTitles } from './MediaCard';
 import MediaDetail from './MediaDetail';
 
 const SEARCH_LABELS = {
-  all: 'movies, shows, music and books',
+  all: 'everything',
   movie: 'movies',
   tv: 'shows',
   book: 'books',

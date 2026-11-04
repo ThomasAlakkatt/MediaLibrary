@@ -320,7 +320,7 @@ test('the Music tab still goes back to its own results', async () => {
 
 test('the search box is labeled for everything it searches', async () => {
   render(<App />);
-  expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies, shows, music and books');
+  expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search everything');
   expect(screen.queryByText('Title', { selector: 'label' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: 'Movies' }));
   expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies');

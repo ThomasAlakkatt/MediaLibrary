@@ -1468,3 +1468,212 @@ label.track-content {
 .date-range .movie-status {
   margin-top: 8px;
 }
+
+/* Phones and other touch screens. */
+@media (max-width: 700px), (pointer: coarse) {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Safari zooms the whole page when tapping a text box or dropdown with text under 16px. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    box-sizing: border-box;
+    min-height: 44px !important;
+  }
+
+  /* Safari ignores padding and height on its own dropdown style, leaving them tiny. */
+  select {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%239aa79d' stroke-width='2'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E") !important;
+    background-position: right 12px center !important;
+    background-repeat: no-repeat !important;
+    padding-right: 32px !important;
+  }
+
+  input[type='search'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    flex: 0 0 auto;
+    height: 22px;
+    margin: 0;
+    width: 22px;
+  }
+
+  /* Comfortable sizes for a finger. */
+  .pagination-btn,
+  .primary-btn,
+  .secondary-btn,
+  .danger-btn,
+  .clear-btn,
+  #search-btn,
+  .search-tab,
+  .main-nav-link,
+  .copy-link-btn,
+  .back-btn,
+  .shelf-item-title {
+    min-height: 44px;
+  }
+
+  .theme-toggle-btn,
+  .icon-btn,
+  .shelf-chip-remove {
+    height: 44px;
+    width: 44px;
+  }
+
+  .movie-trailer-link {
+    align-items: center;
+    display: inline-flex;
+    margin-top: 0;
+    min-height: 44px;
+  }
+
+  .log-scope label,
+  .shelf-options label,
+  .track-content {
+    min-height: 44px;
+  }
+
+  .shelf-options label,
+  .track-content {
+    box-sizing: border-box;
+  }
+
+  .suggestions-dropdown li {
+    align-items: center;
+    box-sizing: border-box;
+    display: flex;
+    min-height: 44px;
+  }
+
+  .pagination {
+    gap: 8px;
+  }
+
+  .pagination-btn,
+  .pagination-page {
+    white-space: nowrap;
+  }
+
+  .pagination-btn {
+    padding: 10px 12px;
+  }
+}
+
+/* A hover effect would stick after tapping on a touch screen. */
+@media (hover: none) {
+  .result-card:hover,
+  .shelf-card:hover,
+  .movie-card:hover {
+    transform: none;
+  }
+}
+
+/* Phone-sized layouts. */
+@media (max-width: 700px) {
+  header {
+    padding: 24px 16px;
+  }
+
+  header h1 {
+    font-size: 1.75rem;
+    padding: 0 44px;
+  }
+
+  header p {
+    font-size: 0.9rem;
+  }
+
+  .theme-toggle-btn {
+    right: 8px;
+    top: 8px;
+  }
+
+  .main-nav {
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .search-tabs {
+    gap: 6px;
+    margin: 8px 0 28px;
+  }
+
+  .search-tab {
+    font-size: 0.85rem;
+    padding: 6px 12px;
+  }
+
+  main {
+    padding: 0 16px;
+  }
+
+  .search-card {
+    box-sizing: border-box;
+    padding: 20px;
+  }
+
+  /* Two across instead of one, so a page of ten isn't many screens long. */
+  .results {
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-info {
+    padding: 10px 12px 12px;
+  }
+
+  /* Keeps the cover from filling the screen before the log form. */
+  .detail-release-image {
+    margin-left: auto;
+    margin-right: auto;
+    max-width: 220px;
+  }
+
+  .detail-layout {
+    gap: 20px;
+  }
+
+  .page-filters {
+    width: 100%;
+  }
+
+  .page-filters select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* Keeps both dates on one line, with the date type above them. */
+  .date-range-fields select {
+    flex: 1 0 100%;
+  }
+
+  .date-range-fields input {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .date-range-fields .secondary-btn {
+    flex: 1 0 100%;
+  }
+
+  .list-search {
+    max-width: none;
+  }
+
+  .shelf-search {
+    max-width: none;
+  }
+}
