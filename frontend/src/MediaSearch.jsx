@@ -1,24 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_URL, getErrorMessage, logStatusText } from './api';
+import { API_URL, getErrorMessage } from './api';
 import { Clapperboard } from './Loaders';
-import MediaCard from './MediaCard';
+import MediaCard, { LoggedBadge, useLoggedTitles } from './MediaCard';
 import MediaDetail from './MediaDetail';
 
 const SEARCH_LABELS = { all: 'movies, shows and music', movie: 'movies', tv: 'shows' };
 
 // The backend sends this many music results per page, so a full page means there may be more.
 const MUSIC_PAGE_SIZE = 10;
-
-function LoggedBadge({ log }) {
-  const status = logStatusText(log) ?? 'Logged';
-  return (
-    <p className="logged-badge">
-      ✓ {status}
-      {log.rating !== null && ` · ★ ${log.rating}`}
-    </p>
-  );
-}
 
 function updateShareableUrl(query, type) {
   const params = new URLSearchParams();
@@ -47,7 +37,8 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
   const [hasResponse, setHasResponse] = useState(false);
 
   const [selected, setSelected] = useState(null);
-  const [logs, setLogs] = useState({});
+  const allResults = useMemo(() => [...results, ...musicResults], [results, musicResults]);
+  const logs = useLoggedTitles(allResults, selected);
 
   // Lets a slower, older request be ignored if a newer search has started since.
   const latestRequest = useRef(0);
@@ -113,27 +104,6 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
     },
     []
   );
-
-  // Marks results already in the library. Also runs when coming back from a title's page, since it may
-  // have just been logged. The marks are a nice extra, so results still show if this fails.
-  useEffect(() => {
-    if (selected || results.length === 0) return undefined;
-    let current = true;
-    axios
-      .get(`${API_URL}/library`)
-      .then((response) => {
-        if (!current) return;
-        setLogs(
-          Object.fromEntries(
-            response.data.map((log) => [`${log.media_type}-${log.tmdb_id}`, log])
-          )
-        );
-      })
-      .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, [results, selected]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -227,6 +197,7 @@ export default function MediaSearch({ type, onLogSubmitted, onOpenRelease }) {
                 <span className="music-card-title">{release.title}</span>
                 <span className="result-artist">{release.artists.join(', ')}</span>
                 {release.year ? <span className="result-year">{release.year}</span> : null}
+                {logs[`album-${release.id}`] && <LoggedBadge log={logs[`album-${release.id}`]} />}
               </span>
             </button>
           );

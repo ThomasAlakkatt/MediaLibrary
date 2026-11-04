@@ -31,13 +31,18 @@ IS_LOGGED_SQL = """(
 
 
 # Adds the title if it's new, or refreshes its TMDB details if not. Returns its library_items id.
-def _ensure_item(connection, media_type, tmdb_id, details):
+def _ensure_item(connection, media_type, tmdb_id, details, track_index=-1):
     connection.execute(
         """
-        INSERT INTO library_items (media_type, tmdb_id, title, year, release_date, poster_path, overview)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (media_type, tmdb_id) DO UPDATE SET
+        INSERT INTO library_items (
+            media_type, tmdb_id, track_index, title, artists, album_title,
+            year, release_date, poster_path, overview
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (media_type, tmdb_id, track_index) DO UPDATE SET
             title = excluded.title,
+            artists = excluded.artists,
+            album_title = excluded.album_title,
             year = excluded.year,
             release_date = COALESCE(excluded.release_date, release_date),
             poster_path = excluded.poster_path,
@@ -46,7 +51,10 @@ def _ensure_item(connection, media_type, tmdb_id, details):
         (
             media_type,
             tmdb_id,
+            track_index,
             details["title"],
+            details.get("artists"),
+            details.get("album_title"),
             details.get("year"),
             details.get("release_date"),
             details.get("poster_path"),
@@ -54,7 +62,8 @@ def _ensure_item(connection, media_type, tmdb_id, details):
         ),
     )
     row = connection.execute(
-        "SELECT id FROM library_items WHERE media_type = ? AND tmdb_id = ?", (media_type, tmdb_id)
+        "SELECT id FROM library_items WHERE media_type = ? AND tmdb_id = ? AND track_index = ?",
+        (media_type, tmdb_id, track_index),
     ).fetchone()
     return row["id"]
 
@@ -78,9 +87,10 @@ def _touch_item(connection, item_id):
     )
 
 
-def _load_item(connection, media_type, tmdb_id):
+def _load_item(connection, media_type, tmdb_id, track_index=-1):
     row = connection.execute(
-        "SELECT * FROM library_items WHERE media_type = ? AND tmdb_id = ?", (media_type, tmdb_id)
+        "SELECT * FROM library_items WHERE media_type = ? AND tmdb_id = ? AND track_index = ?",
+        (media_type, tmdb_id, track_index),
     ).fetchone()
     if row is None:
         return None
@@ -105,9 +115,9 @@ def _load_item(connection, media_type, tmdb_id):
     return item
 
 
-def get_item(media_type, tmdb_id):
+def get_item(media_type, tmdb_id, track_index=-1):
     with get_connection() as connection:
-        item = _load_item(connection, media_type, tmdb_id)
+        item = _load_item(connection, media_type, tmdb_id, track_index)
     if item is None:
         raise ItemNotFound()
     return item
@@ -118,7 +128,10 @@ def get_item(media_type, tmdb_id):
 def _fill_missing_release_dates():
     with get_connection() as connection:
         missing = connection.execute(
-            "SELECT id, media_type, tmdb_id FROM library_items WHERE release_date IS NULL"
+            """
+            SELECT id, media_type, tmdb_id FROM library_items
+            WHERE release_date IS NULL AND media_type IN ('movie', 'tv')
+            """
         ).fetchall()
 
     for row in missing:
@@ -225,9 +238,9 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
 
 
 # Replaces a title's log. Returns the saved title, or None if nothing about it is left to keep.
-def save_log(media_type, tmdb_id, details, log):
+def save_log(media_type, tmdb_id, details, log, track_index=-1):
     with get_connection() as connection:
-        item_id = _ensure_item(connection, media_type, tmdb_id, details)
+        item_id = _ensure_item(connection, media_type, tmdb_id, details, track_index)
         connection.execute(
             """
             UPDATE library_items
@@ -237,36 +250,64 @@ def save_log(media_type, tmdb_id, details, log):
             (*(log.get(field) for field in LOG_FIELDS), item_id),
         )
         _prune_item(connection, item_id)
-        return _load_item(connection, media_type, tmdb_id)
+        return _load_item(connection, media_type, tmdb_id, track_index)
+
+
+# Saves the same log to each song in tracks, all or nothing, where each becomes its own entry.
+def save_songs_log(album_id, album_details, tracks, log):
+    with get_connection() as connection:
+        for track in tracks:
+            details = {
+                **album_details,
+                "title": track["title"],
+                "album_title": album_details["title"],
+                "overview": None,
+            }
+            item_id = _ensure_item(connection, "song", album_id, details, track["track_index"])
+            connection.execute(
+                """
+                UPDATE library_items
+                SET status = ?, rating = ?, review = ?, finished_on = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (*(log.get(field) for field in LOG_FIELDS), item_id),
+            )
+            _prune_item(connection, item_id)
+    return list_album_songs(album_id)
+
+
+# The songs from an album that are in the library, in tracklist order.
+def list_album_songs(album_id):
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM library_items WHERE media_type = 'song' AND tmdb_id = ? ORDER BY track_index",
+            (album_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 # Clears a title's log and season logs, but leaves it on its shelves.
-def clear_log(media_type, tmdb_id):
+def clear_log(media_type, tmdb_id, track_index=-1):
+    where = "media_type = ? AND tmdb_id = ? AND track_index = ?"
+    key = (media_type, tmdb_id, track_index)
     with get_connection() as connection:
         connection.execute(
-            """
-            DELETE FROM season_logs WHERE item_id IN (
-                SELECT id FROM library_items WHERE media_type = ? AND tmdb_id = ?
-            )
-            """,
-            (media_type, tmdb_id),
+            f"DELETE FROM season_logs WHERE item_id IN (SELECT id FROM library_items WHERE {where})",
+            key,
         )
         connection.execute(
             """
             UPDATE library_items
             SET status = NULL, rating = NULL, review = NULL, finished_on = NULL,
                 updated_at = datetime('now')
-            WHERE media_type = ? AND tmdb_id = ?
+            WHERE media_type = ? AND tmdb_id = ? AND track_index = ?
             """,
-            (media_type, tmdb_id),
+            key,
         )
-        row = connection.execute(
-            "SELECT id FROM library_items WHERE media_type = ? AND tmdb_id = ?",
-            (media_type, tmdb_id),
-        ).fetchone()
+        row = connection.execute(f"SELECT id FROM library_items WHERE {where}", key).fetchone()
         if row is not None:
             _prune_item(connection, row["id"])
-        return _load_item(connection, media_type, tmdb_id)
+        return _load_item(connection, media_type, tmdb_id, track_index)
 
 
 # Saves one season's log for a show. An empty log removes that season's entry.
@@ -374,10 +415,10 @@ def delete_shelf(shelf_id):
 
 
 # Adds a title to the end of a shelf, like a playlist. Adding one that's already there changes nothing.
-def add_to_shelf(shelf_id, media_type, tmdb_id, details):
+def add_to_shelf(shelf_id, media_type, tmdb_id, details, track_index=-1):
     with get_connection() as connection:
         _require_shelf(connection, shelf_id)
-        item_id = _ensure_item(connection, media_type, tmdb_id, details)
+        item_id = _ensure_item(connection, media_type, tmdb_id, details, track_index)
         connection.execute(
             """
             INSERT OR IGNORE INTO shelf_items (shelf_id, item_id, position)

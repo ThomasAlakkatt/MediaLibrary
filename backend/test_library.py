@@ -411,7 +411,7 @@ def test_upgrade_removes_season_ratings_and_keeps_the_rest(tmp_path, monkeypatch
     connection = sqlite3.connect(tmp_path / "v1.db")
     columns = [row[1] for row in connection.execute("PRAGMA table_info(season_logs)")]
     assert columns == ["item_id", "season_number", "status", "finished_on"]
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
     connection.close()
 
 
@@ -651,3 +651,164 @@ def test_a_shows_own_status_beats_its_seasons_in_the_filter(client):
     client.put("/library/tv/2/seasons/1", json={**details(BB), "status": "finished"})
     assert library_titles(client, status="finished") == []
     assert library_titles(client, status="want") == ["Breaking Bad"]
+
+
+ALBUM = {"title": "OK Computer", "artists": "Radiohead", "year": "1997", "poster_path": "https://img/ok.jpg"}
+TRACKS = [{"track_index": 0, "title": "Airbag"}, {"track_index": 6, "title": "Karma Police"}]
+
+
+def save_songs(client, tracks=TRACKS, **log):
+    return client.put("/library/album/21491/songs", json={**ALBUM, "tracks": tracks, **log})
+
+
+def test_an_album_is_logged_like_a_movie(client):
+    response = client.put(
+        "/library/album/21491", json={**ALBUM, "status": "finished", "rating": 9.25, "review": "Great"}
+    )
+    assert response.status_code == 200
+    item = client.get("/library/album/21491").json()
+    assert (item["media_type"], item["title"], item["artists"], item["rating"]) == (
+        "album",
+        "OK Computer",
+        "Radiohead",
+        9.25,
+    )
+    assert item["track_index"] == -1
+    assert item["poster_path"] == "https://img/ok.jpg"
+
+
+def test_album_and_movie_with_the_same_id_stay_separate(client):
+    client.put("/library/album/5", json={**ALBUM, "rating": 1})
+    save_log(client, {**DUNE, "tmdb_id": 5}, rating=9)
+    assert client.get("/library/album/5").json()["title"] == "OK Computer"
+    assert client.get("/library/movie/5").json()["title"] == "Dune"
+
+
+def test_each_selected_song_becomes_its_own_entry(client):
+    songs = save_songs(client, status="finished", rating=9, review="Great", finished_on="2026-11-01").json()
+
+    assert [song["title"] for song in songs] == ["Airbag", "Karma Police"]
+    for song in songs:
+        assert song["media_type"] == "song"
+        assert song["album_title"] == "OK Computer"
+        assert song["artists"] == "Radiohead"
+        assert (song["status"], song["rating"], song["review"]) == ("finished", 9, "Great")
+        assert song["finished_on"] == "2026-11-01"
+    assert sorted(library_titles(client)) == ["Airbag", "Karma Police"]
+    assert client.get("/library/album/21491").status_code == 404
+
+
+def test_songs_and_their_album_are_logged_separately(client):
+    client.put("/library/album/21491", json={**ALBUM, "rating": 7})
+    save_songs(client, rating=9)
+    assert client.get("/library/album/21491").json()["rating"] == 7
+    assert client.get("/library/song/21491/6").json()["rating"] == 9
+    assert len(client.get("/library").json()) == 3
+
+
+def test_saving_a_logged_song_again_replaces_its_log(client):
+    save_songs(client, rating=9, review="Old")
+    save_songs(client, tracks=TRACKS[:1], rating=5)
+    assert client.get("/library/song/21491/0").json()["rating"] == 5
+    assert client.get("/library/song/21491/0").json()["review"] is None
+    assert client.get("/library/song/21491/6").json()["rating"] == 9
+
+
+def test_a_song_can_be_changed_and_cleared_alone(client):
+    save_songs(client, rating=9)
+    body = {"title": "Airbag", "album_title": "OK Computer", "artists": "Radiohead", "rating": 4}
+    assert client.put("/library/song/21491/0", json=body).json()["rating"] == 4
+    assert client.get("/library/song/21491/6").json()["rating"] == 9
+
+    assert client.delete("/library/song/21491/0").json() is None
+    assert client.get("/library/song/21491/0").status_code == 404
+    assert [s["title"] for s in client.get("/library/album/21491/songs").json()] == ["Karma Police"]
+
+
+def test_album_songs_come_back_in_tracklist_order(client):
+    save_songs(client, tracks=list(reversed(TRACKS)), rating=9)
+    assert [s["track_index"] for s in client.get("/library/album/21491/songs").json()] == [0, 6]
+
+
+def test_album_songs_are_only_that_albums(client):
+    save_songs(client, rating=9)
+    assert client.get("/library/album/999/songs").json() == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"tracks": []},
+        {"tracks": [{"track_index": -1, "title": "x"}]},
+        {"tracks": [{"track_index": 0, "title": ""}]},
+        {"tracks": TRACKS, "rating": 11},
+        {"tracks": TRACKS, "rating": 7.333},
+    ],
+)
+def test_invalid_song_logs_are_rejected_and_store_nothing(client, body):
+    assert client.put("/library/album/21491/songs", json={**ALBUM, **body}).status_code == 422
+    assert client.get("/library/album/21491/songs").json() == []
+
+
+def test_a_song_log_with_nothing_in_it_keeps_nothing(client):
+    assert save_songs(client).json() == []
+
+
+def test_the_generic_routes_do_not_accept_songs(client):
+    assert client.get("/library/song/1").status_code in (404, 405, 422)
+    assert client.put("/library/song/1", json={"title": "x", "rating": 1}).status_code in (404, 405, 422)
+
+
+def test_songs_go_on_shelves_with_movies_and_albums(client):
+    shelf_id = make_shelf(client)
+    add(client, shelf_id, DUNE)
+    add(client, shelf_id, {"media_type": "album", "tmdb_id": 21491, **ALBUM})
+    add(client, shelf_id, {"media_type": "song", "tmdb_id": 21491, "track_index": 6, "title": "Karma Police"})
+    add(client, shelf_id, {"media_type": "song", "tmdb_id": 21491, "track_index": 0, "title": "Airbag"})
+
+    shelf = client.get(f"/shelves/{shelf_id}").json()
+    assert titles(shelf) == ["Dune", "OK Computer", "Karma Police", "Airbag"]
+    assert client.get("/library/song/21491/6").json()["shelf_ids"] == [shelf_id]
+    assert client.get("/library/album/21491").json()["shelf_ids"] == [shelf_id]
+
+
+def test_library_filters_by_music_types(client):
+    client.put("/library/album/21491", json={**ALBUM, "rating": 7})
+    save_songs(client, rating=9)
+    save_log(client, DUNE, rating=8)
+    assert library_titles(client, media_type="album") == ["OK Computer"]
+    assert sorted(library_titles(client, media_type="song")) == ["Airbag", "Karma Police"]
+
+
+def test_music_never_looks_up_release_dates_on_tmdb(client, no_tmdb_lookups):
+    client.put("/library/album/21491", json={**ALBUM, "rating": 7})
+    save_songs(client, rating=9)
+    log_movie(client, movie(1, "Heat", year="1995"), rating=1)
+
+    assert library_titles(client, sort="release")[-1] == "Heat"
+    assert no_tmdb_lookups == [("movie", 1)]
+
+
+def test_music_sorts_by_date_finished_with_everything_else(client, fixed_today):
+    client.put("/library/album/21491", json={**ALBUM, "status": "finished", "finished_on": "2026-01-01"})
+    save_songs(client, tracks=TRACKS[:1], status="in_progress")
+    log_movie(client, movie(1, "Heat"), status="finished", finished_on="2026-06-01")
+    assert library_titles(client, sort="watched") == ["Airbag", "Heat", "OK Computer"]
+
+
+def test_upgrade_to_music_keeps_ids_shelves_and_seasons(old_database):
+    with upgraded_client() as client:
+        item = client.get("/library/tv/2").json()
+        assert (item["id"], item["rating"], item["shelf_ids"]) == (7, 9.5, [3])
+        assert item["seasons"][0]["status"] == "finished"
+        assert item["track_index"] == -1
+        assert client.put("/library/album/1", json={**ALBUM, "rating": 1}).status_code == 200
+        assert titles(client.get("/shelves/3").json()) == ["Breaking Bad"]
+
+
+def test_upgrade_to_music_keeps_a_copy_of_the_old_file(old_database):
+    with upgraded_client():
+        pass
+    backup = sqlite3.connect(f"{old_database}-before-music-logging")
+    assert backup.execute("SELECT title FROM library_items").fetchone()[0] == "Breaking Bad"
+    backup.close()

@@ -12,7 +12,7 @@ from music_service import (
     DiscogsUnavailable,
     ReleaseNotFound,
     search_releases,
-    release_details,
+    get_album,
     search_music_text,
 )
 from database import init_db
@@ -23,7 +23,6 @@ from library_service import (
     ItemNotFound,
     ShelfNotFound,
 )
-from movie_service import get_movies_by_genres
 from tmdb_service import ShowNotFound, TMDBUnavailable, get_show_details, search_media
 
 # CORS is needed so that when I run my frontend and FastAPI on localhost from two different origins. CORS allows the frontend to make
@@ -67,7 +66,7 @@ def discogs_unavailable(request, exc):
 
 @app.exception_handler(ReleaseNotFound)
 def release_not_found(request, exc):
-    return JSONResponse(status_code=404, content={"detail": "Could not find that release."})
+    return JSONResponse(status_code=404, content={"detail": "Could not find that album."})
 
 
 @app.exception_handler(TMDBUnavailable)
@@ -116,7 +115,9 @@ def _blank_to_none(text):
     return (text or "").strip() or None
 
 
-MediaType = Literal["movie", "tv"]
+# A song is identified differently from everything else, so it has routes of its own.
+LoggableType = Literal["movie", "tv", "album"]
+MediaType = Literal["movie", "tv", "album", "song"]
 Status = Literal["want", "in_progress", "finished"]
 Rating = Annotated[Optional[float], AfterValidator(_validate_rating)]
 OptionalText = Annotated[Optional[str], AfterValidator(_blank_to_none)]
@@ -126,6 +127,8 @@ ShelfName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 # The TMDB details stored with a title, so the library can be shown without calling TMDB.
 class TitleDetails(BaseModel):
     title: str = Field(min_length=1)
+    artists: Optional[str] = None
+    album_title: Optional[str] = None
     year: Optional[str] = None
     release_date: Optional[str] = None
     poster_path: Optional[str] = None
@@ -144,9 +147,20 @@ class SeasonLogRequest(TitleDetails):
     finished_on: Optional[date] = None
 
 
+class SongTrack(BaseModel):
+    track_index: int = Field(ge=0)
+    title: str = Field(min_length=1)
+
+
+# TitleDetails here describes the album, with the songs being logged listed in tracks.
+class SongsLogRequest(LogRequest):
+    tracks: list[SongTrack] = Field(min_length=1)
+
+
 class ShelfItemRequest(TitleDetails):
     media_type: MediaType
     tmdb_id: int
+    track_index: int = -1
 
 
 class ShelfRequest(BaseModel):
@@ -160,7 +174,18 @@ class ShelfOrderRequest(BaseModel):
 
 def _split_details(body, log_fields):
     data = body.model_dump()
-    details = {key: data[key] for key in ("title", "year", "release_date", "poster_path", "overview")}
+    details = {
+        key: data[key]
+        for key in (
+            "title",
+            "artists",
+            "album_title",
+            "year",
+            "release_date",
+            "poster_path",
+            "overview",
+        )
+    }
     log = {key: data[key] for key in log_fields}
     if log.get("finished_on"):
         log["finished_on"] = log["finished_on"].isoformat()
@@ -204,17 +229,13 @@ def show_details(show_id: int):
     return get_show_details(show_id)
 
 
-# Given a Discogs release ID, looks up that release's genres/styles and returns movie
-# recommendations matching them.
-@app.get("/movies/{release_id}")
-def movies_for_release(release_id: int):
-    details = release_details(release_id)
-    return get_movies_by_genres(
-        details.get("genres", []), details.get("styles", []), number_of_results=10
-    )
+# An album's details and tracklist.
+@app.get("/albums/{album_id}")
+def album(album_id: int):
+    return get_album(album_id)
 
 
-# Your logged movies and shows, most recently changed first unless a sort is chosen.
+# Your logged titles, most recently changed first unless a sort is chosen.
 @app.get("/library")
 def library(
     media_type: Optional[MediaType] = None,
@@ -225,21 +246,51 @@ def library(
     return library_service.list_library(media_type, status, sort, order)
 
 
+# The songs from an album that are in the library.
+@app.get("/library/album/{album_id}/songs")
+def album_songs(album_id: int):
+    return library_service.list_album_songs(album_id)
+
+
+# Saves one log to each song listed, where each becomes its own entry in the library.
+@app.put("/library/album/{album_id}/songs")
+def save_songs_log(album_id: int, body: SongsLogRequest):
+    details, log = _split_details(body, ("status", "rating", "review", "finished_on"))
+    tracks = [track.model_dump() for track in body.tracks]
+    return library_service.save_songs_log(album_id, details, tracks, log)
+
+
+@app.get("/library/song/{album_id}/{track_index}")
+def song_item(album_id: int, track_index: int):
+    return library_service.get_item("song", album_id, track_index)
+
+
+@app.put("/library/song/{album_id}/{track_index}")
+def save_song_log(album_id: int, track_index: int, body: LogRequest):
+    details, log = _split_details(body, ("status", "rating", "review", "finished_on"))
+    return library_service.save_log("song", album_id, details, log, track_index)
+
+
+@app.delete("/library/song/{album_id}/{track_index}")
+def clear_song_log(album_id: int, track_index: int):
+    return library_service.clear_log("song", album_id, track_index)
+
+
 @app.get("/library/{media_type}/{tmdb_id}")
-def library_item(media_type: MediaType, tmdb_id: int):
+def library_item(media_type: LoggableType, tmdb_id: int):
     return library_service.get_item(media_type, tmdb_id)
 
 
 # Replaces a title's log. Returns null if that leaves nothing to keep.
 @app.put("/library/{media_type}/{tmdb_id}")
-def save_log(media_type: MediaType, tmdb_id: int, body: LogRequest):
+def save_log(media_type: LoggableType, tmdb_id: int, body: LogRequest):
     details, log = _split_details(body, ("status", "rating", "review", "finished_on"))
     return library_service.save_log(media_type, tmdb_id, details, log)
 
 
 # Clears a title's log and season logs, leaving it on its shelves. Returns null if that leaves nothing.
 @app.delete("/library/{media_type}/{tmdb_id}")
-def clear_log(media_type: MediaType, tmdb_id: int):
+def clear_log(media_type: LoggableType, tmdb_id: int):
     return library_service.clear_log(media_type, tmdb_id)
 
 
@@ -277,7 +328,9 @@ def delete_shelf(shelf_id: int):
 @app.post("/shelves/{shelf_id}/items")
 def add_to_shelf(shelf_id: int, body: ShelfItemRequest):
     details, _ = _split_details(body, ())
-    return library_service.add_to_shelf(shelf_id, body.media_type, body.tmdb_id, details)
+    return library_service.add_to_shelf(
+        shelf_id, body.media_type, body.tmdb_id, details, body.track_index
+    )
 
 
 @app.delete("/shelves/{shelf_id}/items/{item_id}")

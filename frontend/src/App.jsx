@@ -152,7 +152,7 @@ export default function App() {
       <main>
         {view === 'search' &&
           (tab === 'music' ? (
-            <MusicSearch />
+            <MusicSearch onLogSubmitted={() => navigate('library')} />
           ) : (
             <>
               <div hidden={Boolean(openRelease)}>
@@ -167,6 +167,7 @@ export default function App() {
                   key={openRelease.id}
                   initialRelease={openRelease}
                   onBack={handleCloseRelease}
+                  onLogSubmitted={() => navigate('library')}
                 />
               )}
             </>

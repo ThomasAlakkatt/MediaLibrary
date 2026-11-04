@@ -3,6 +3,9 @@ import axios from 'axios';
 import {
   API_URL,
   INVALID_RATING_MESSAGE,
+  externalLink,
+  isMusic,
+  logUrl,
   statusLabels,
   getErrorMessage,
   parseRating,
@@ -73,7 +76,9 @@ function draftFromLog(log) {
   };
 }
 
-function LogForm({ item, log, onSaved, onLogSubmitted }) {
+// saveLog and clearLog replace the usual requests, for logs that aren't saved to the title itself.
+// blockedMessage explains why saving isn't possible yet.
+export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog, blockedMessage }) {
   const [draft, setDraft] = useState(() => draftFromLog(log));
   // True while the date is still the automatic one, rather than one that was saved or picked.
   const [dateIsDefault, setDateIsDefault] = useState(() => isNewEntry(log));
@@ -108,6 +113,11 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
 
   async function handleSave(event) {
     event.preventDefault();
+    if (blockedMessage) {
+      setError(blockedMessage);
+      return;
+    }
+
     const rating = parseRating(draft.rating);
     if (rating === undefined) {
       setError(INVALID_RATING_MESSAGE);
@@ -124,13 +134,15 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
     setError(null);
     setMessage(null);
     try {
-      const response = await axios.put(`${API_URL}/library/${item.media_type}/${item.id}`, {
-        ...titleDetails(item),
+      const logFields = {
         status: draft.status,
         rating,
         review: draft.review,
         finished_on: draft.finished_on || null,
-      });
+      };
+      const response = saveLog
+        ? await saveLog(logFields)
+        : await axios.put(logUrl(item), { ...titleDetails(item), ...logFields });
       onSaved(response.data);
       onLogSubmitted();
     } catch (err) {
@@ -145,7 +157,7 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
     setError(null);
     setMessage(null);
     try {
-      const response = await axios.delete(`${API_URL}/library/${item.media_type}/${item.id}`);
+      const response = clearLog ? await clearLog() : await axios.delete(logUrl(item));
       onSaved(response.data);
       setDraft(newDraft());
       setDateIsDefault(true);
@@ -480,7 +492,7 @@ function ShelfSearch({ shelves, shelfIds, busy, onAdd, onRemove, onCreate }) {
   );
 }
 
-function ShelfPicker({ item, log, onLogChanged }) {
+export function ShelfPicker({ item, log, onLogChanged }) {
   const [shelves, setShelves] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -506,7 +518,7 @@ function ShelfPicker({ item, log, onLogChanged }) {
 
   async function refreshLog() {
     try {
-      const response = await axios.get(`${API_URL}/library/${item.media_type}/${item.id}`);
+      const response = await axios.get(logUrl(item));
       onLogChanged(response.data);
     } catch (err) {
       if (err.response?.status !== 404) throw err;
@@ -518,6 +530,7 @@ function ShelfPicker({ item, log, onLogChanged }) {
     return axios.post(`${API_URL}/shelves/${shelfId}/items`, {
       media_type: item.media_type,
       tmdb_id: item.id,
+      track_index: item.track_index,
       ...titleDetails(item),
     });
   }
@@ -629,7 +642,7 @@ export default function MediaDetail({
   useEffect(() => {
     let current = true;
     axios
-      .get(`${API_URL}/library/${item.media_type}/${item.id}`)
+      .get(logUrl(item))
       .then((response) => {
         if (!current) return;
         setLog(response.data);
@@ -648,9 +661,11 @@ export default function MediaDetail({
     return () => {
       current = false;
     };
-  }, [item.media_type, item.id]);
+  }, [item.media_type, item.id, item.track_index]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tmdbUrl = `https://www.themoviedb.org/${item.media_type}/${item.id}`;
+  const music = isMusic(item.media_type);
+  const imageClass = music ? 'detail-release-image' : 'detail-release-image result-image--poster';
+  const link = externalLink(item);
   return (
     <section aria-label="title detail" className="detail-view">
       <button className="back-btn" onClick={onBack}>
@@ -661,17 +676,16 @@ export default function MediaDetail({
         <div className="detail-release">
           {item.poster_path ? (
             <img
-              className="detail-release-image result-image--poster"
+              className={imageClass}
               src={posterUrl(item.poster_path)}
-              alt={`${item.title} poster`}
+              alt={`${item.title} ${music ? 'cover art' : 'poster'}`}
             />
           ) : (
-            <div className="detail-release-image detail-release-image--placeholder result-image--poster">
-              No Image
-            </div>
+            <div className={`${imageClass} detail-release-image--placeholder`}>No Image</div>
           )}
           <h2>{item.title}</h2>
-          <p className="detail-release-artist">{TYPE_LABELS[item.media_type]}</p>
+          <p className="detail-release-artist">{item.artists || TYPE_LABELS[item.media_type]}</p>
+          {item.album_title && <p className="detail-release-year">{item.album_title}</p>}
           <div className="movie-meta">
             {item.vote_count > 0 && (
               <span className="movie-rating" title="TMDB rating">
@@ -680,14 +694,18 @@ export default function MediaDetail({
             )}
             {item.year && <span className="movie-release-date">{item.year}</span>}
           </div>
-          <a className="movie-trailer-link" href={tmdbUrl} target="_blank" rel="noopener noreferrer">
-            View on TMDB
+          <a className="movie-trailer-link" href={link.url} target="_blank" rel="noopener noreferrer">
+            {link.label}
           </a>
         </div>
 
         <div className="detail-movies">
-          <h3>Overview</h3>
-          <p className="media-detail-overview">{item.overview || 'No overview available.'}</p>
+          {!music && (
+            <>
+              <h3>Overview</h3>
+              <p className="media-detail-overview">{item.overview || 'No overview available.'}</p>
+            </>
+          )}
 
           <h3>My log</h3>
           {logState === 'loading' && <p className="movie-status">Loading your log…</p>}

@@ -9,11 +9,14 @@ export function getErrorMessage(err, fallback) {
 const WATCH_LABELS = { want: 'Want to watch', in_progress: 'Watching', finished: 'Watched' };
 
 // The words for a status depend on what kind of title it is.
+const LISTEN_LABELS = { want: 'Want to listen', in_progress: 'Listening', finished: 'Listened' };
+
 const STATUS_LABELS_BY_TYPE = {
   movie: WATCH_LABELS,
   tv: WATCH_LABELS,
+  album: LISTEN_LABELS,
+  song: LISTEN_LABELS,
   book: { want: 'Want to read', in_progress: 'Reading', finished: 'Read' },
-  music: { want: 'Want to listen', in_progress: 'Listening', finished: 'Listened' },
 };
 
 export function statusLabels(mediaType) {
@@ -76,14 +79,47 @@ export function formatDate(text) {
   return new Date(year, month - 1, day).toLocaleDateString(undefined, { dateStyle: 'medium' });
 }
 
+// TMDB gives a path to build an image address from, while Discogs gives the full address.
 export function posterUrl(posterPath, size = 'w342') {
+  if (posterPath.startsWith('http')) return posterPath;
   return `https://image.tmdb.org/t/p/${size}${posterPath}`;
+}
+
+export function isMusic(mediaType) {
+  return mediaType === 'album' || mediaType === 'song';
+}
+
+// Where a title's log is stored. A song has no ID of its own, so it's found through its album.
+export function logUrl(item) {
+  const path =
+    item.media_type === 'song' ? `song/${item.id}/${item.track_index}` : `${item.media_type}/${item.id}`;
+  return `${API_URL}/library/${path}`;
+}
+
+export function externalLink(item) {
+  return isMusic(item.media_type)
+    ? { url: `https://www.discogs.com/master/${item.id}`, label: 'View on Discogs' }
+    : { url: `https://www.themoviedb.org/${item.media_type}/${item.id}`, label: 'View on TMDB' };
+}
+
+// A music search result, in the form the album page uses.
+export function releaseToMedia(release) {
+  return {
+    id: release.id,
+    media_type: 'album',
+    title: release.title,
+    artists: release.artists?.join(', ') || undefined,
+    year: release.year || undefined,
+    poster_path: release.cover_image || release.thumb || undefined,
+  };
 }
 
 // The TMDB details the backend stores alongside a title.
 export function titleDetails(media) {
   return {
     title: media.title,
+    artists: media.artists,
+    album_title: media.album_title,
     year: media.year,
     release_date: media.release_date,
     poster_path: media.poster_path,
@@ -91,11 +127,12 @@ export function titleDetails(media) {
   };
 }
 
-// Library and shelf rows use tmdb_id, while search results and the detail page use id for the TMDB ID.
+// Library and shelf rows use tmdb_id, while search results and the detail page use id for the source's ID.
 export function libraryItemToMedia(item) {
   return {
     id: item.tmdb_id,
     media_type: item.media_type,
+    track_index: item.track_index,
     ...titleDetails(item),
   };
 }

@@ -11,7 +11,7 @@ import {
 } from './api';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
-import MediaDetail from './MediaDetail';
+import TitleDetail from './TitleDetail';
 
 const SORT_OPTIONS = [
   { value: 'changed:desc', label: 'Recently changed' },
@@ -58,7 +58,7 @@ export default function LibraryView() {
 
   if (selected) {
     return (
-      <MediaDetail
+      <TitleDetail
         item={libraryItemToMedia(selected)}
         backLabel="← Back to My Library"
         onBack={() => setSelected(null)}
@@ -91,9 +91,11 @@ export default function LibraryView() {
             value={mediaType}
             onChange={(event) => setMediaType(event.target.value)}
           >
-            <option value="">Movies and shows</option>
+            <option value="">All types</option>
             <option value="movie">Movies</option>
             <option value="tv">Shows</option>
+            <option value="album">Albums</option>
+            <option value="song">Songs</option>
           </select>
           <select
             aria-label="Filter by status"
@@ -116,7 +118,7 @@ export default function LibraryView() {
         <p className="empty-state-hint page-empty">
           {isFiltered
             ? 'Nothing in your library matches these filters.'
-            : 'Nothing logged yet. Search for a movie or show, then open it to log it.'}
+            : 'Nothing logged yet. Search for something, then open it to log it.'}
         </p>
       )}
       {items?.length > 0 && (

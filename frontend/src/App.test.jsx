@@ -35,6 +35,18 @@ const SHOW_DETAILS = {
   seasons: [{ season_number: 1, name: 'Season 1', episode_count: 7, year: '2008' }],
 };
 const OK_COMPUTER = { id: 9, title: 'OK Computer', artists: ['Radiohead'], year: 1997 };
+const ALBUM = {
+  id: 9,
+  title: 'OK Computer',
+  artists: ['Radiohead'],
+  year: '1997',
+  cover_image: 'https://img/ok.jpg',
+  tracks: [
+    { track_index: 0, position: 'A1', title: 'Airbag', duration: '4:44' },
+    { track_index: 1, position: 'A2', title: 'Paranoid Android', duration: null },
+    { track_index: 2, position: 'B1', title: 'Karma Police', duration: null },
+  ],
+};
 const SHELF = { id: 5, name: 'Favorites', description: null, item_count: 0, cover_posters: [] };
 
 function libraryItem(overrides = {}) {
@@ -109,13 +121,18 @@ beforeEach(() => {
     shelf: null,
     music: [],
     musicText: [],
+    album: ALBUM,
+    albumItem: NOT_FOUND,
+    albumSongs: [],
   };
   axios.get.mockImplementation((url) => {
     if (url.includes('/search/media')) return respond(routes.search);
     if (url.endsWith('/search/music')) return respond(routes.musicText);
-    if (url.includes('/movies/')) return respond(routes.recommendations);
+    if (url.includes('/albums/')) return respond(routes.album);
     if (url.includes('/shows/')) return respond(routes.show);
-    if (/\/library\/(movie|tv)\//.test(url)) return respond(routes.item);
+    if (/\/library\/album\/\d+\/songs$/.test(url)) return respond(routes.albumSongs);
+    if (/\/library\/album\//.test(url)) return respond(routes.albumItem);
+    if (/\/library\/(movie|tv|song)\//.test(url)) return respond(routes.item);
     if (url.endsWith('/library')) return respond(routes.library);
     if (/\/shelves\/\d+$/.test(url)) return respond(routes.shelf);
     if (url.endsWith('/shelves')) return respond(routes.shelves);
@@ -236,24 +253,12 @@ test('filtering to movies or shows leaves music out', async () => {
   expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/search/music'), expect.anything());
 });
 
-test('opening a music result shows its recommendations', async () => {
-  setRoutes({ musicText: [OK_COMPUTER], recommendations: [] });
-  render(<App />);
-  search('radiohead');
-  fireEvent.click(await screen.findByText('OK Computer'));
-
-  expect(await screen.findByText(/No movie recommendations found/)).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
-  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/movies/9'));
-  expect(window.location.search).toBe('?q=radiohead');
-});
-
 test('going back from a music result returns to the same search and page', async () => {
-  setRoutes({ search: searchResponse([DUNE], 2, 3), musicText: [OK_COMPUTER], recommendations: [] });
+  setRoutes({ search: searchResponse([DUNE], 2, 3), musicText: [OK_COMPUTER] });
   render(<App />);
   search('radiohead');
   fireEvent.click(await screen.findByText('OK Computer'));
-  await screen.findByText(/No movie recommendations found/);
+  await screen.findByText('Airbag');
   axios.get.mockClear();
 
   fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
@@ -262,17 +267,17 @@ test('going back from a music result returns to the same search and page', async
   expect(screen.getByLabelText('Title')).toHaveValue('radiohead');
   expect(screen.getByText('Dune')).toBeVisible();
   expect(screen.getByText('Page 2 of 3')).toBeVisible();
-  expect(screen.queryByText(/No movie recommendations found/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'album detail' })).not.toBeInTheDocument();
   expect(window.location.search).toBe('?q=radiohead');
   expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/search/'), expect.anything());
 });
 
 test('the search is hidden while a music result is open', async () => {
-  setRoutes({ musicText: [OK_COMPUTER], recommendations: [] });
+  setRoutes({ musicText: [OK_COMPUTER] });
   render(<App />);
   search('radiohead');
   fireEvent.click(await screen.findByText('OK Computer'));
-  await screen.findByText(/No movie recommendations found/);
+  await screen.findByText('Airbag');
 
   expect(screen.getByLabelText('Title')).not.toBeVisible();
 });
@@ -281,113 +286,27 @@ test.each([
   ['a filter', () => fireEvent.click(screen.getByRole('tab', { name: 'Movies' }))],
   ['the page navigation', () => goTo('My Library')],
 ])('leaving through %s closes the music result', async (_, leave) => {
-  setRoutes({ musicText: [OK_COMPUTER], recommendations: [] });
+  setRoutes({ musicText: [OK_COMPUTER] });
   render(<App />);
   search('radiohead');
   fireEvent.click(await screen.findByText('OK Computer'));
-  await screen.findByText(/No movie recommendations found/);
+  await screen.findByText('Airbag');
 
   leave();
 
   await waitFor(() =>
-    expect(screen.queryByText(/No movie recommendations found/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'album detail' })).not.toBeInTheDocument()
   );
 });
 
-describe('when recommendations fail', () => {
-  const FAILED = { response: { status: 502, data: { detail: 'Could not reach TMDB' } } };
-  const MOVIE = { id: 70, title: 'Recommended Movie', overview: 'Good.', genres: [] };
-
-  function recommendationCalls() {
-    return axios.get.mock.calls.filter(([url]) => url.includes('/movies/')).length;
-  }
-
-  async function openFailedRelease() {
-    setRoutes({ music: [OK_COMPUTER], recommendations: FAILED });
-    render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
-    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
-    clickSearch();
-    fireEvent.click(await screen.findByText('OK Computer'));
-    await screen.findByText('Could not reach TMDB');
-  }
-
-  test('Try again loads them without reloading the page', async () => {
-    await openFailedRelease();
-    setRoutes({ recommendations: [MOVIE] });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-
-    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
-    expect(screen.queryByText('Could not reach TMDB')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
-  test('the old error goes away while trying again', async () => {
-    await openFailedRelease();
-    setRoutes({ recommendations: () => new Promise(() => {}) });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-
-    expect(await screen.findByText('Loading movies…')).toBeInTheDocument();
-    expect(screen.queryByText('Could not reach TMDB')).not.toBeInTheDocument();
-  });
-
-  test('failing again shows the error again', async () => {
-    await openFailedRelease();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-
-    expect(await screen.findByText('Could not reach TMDB')).toBeInTheDocument();
-    expect(recommendationCalls()).toBe(2);
-  });
-
-  test('reopening the release tries again', async () => {
-    await openFailedRelease();
-    fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
-    setRoutes({ recommendations: [MOVIE] });
-    fireEvent.click(await screen.findByText('OK Computer'));
-
-    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
-  });
-
-  test('successful recommendations are not fetched again', async () => {
-    setRoutes({ music: [OK_COMPUTER], recommendations: [MOVIE] });
-    render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
-    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
-    clickSearch();
-    fireEvent.click(await screen.findByText('OK Computer'));
-    await screen.findByText('Recommended Movie');
-
-    fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
-    fireEvent.click(await screen.findByText('OK Computer'));
-
-    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
-    expect(recommendationCalls()).toBe(1);
-  });
-
-  test('Try again also works for a release opened from All', async () => {
-    setRoutes({ musicText: [OK_COMPUTER], recommendations: FAILED });
-    render(<App />);
-    search('radiohead');
-    fireEvent.click(await screen.findByText('OK Computer'));
-    await screen.findByText('Could not reach TMDB');
-
-    setRoutes({ recommendations: [MOVIE] });
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-
-    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
-  });
-});
-
 test('the Music tab still goes back to its own results', async () => {
-  setRoutes({ music: [OK_COMPUTER], recommendations: [] });
+  setRoutes({ music: [OK_COMPUTER] });
   render(<App />);
   fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
   fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
   clickSearch();
   fireEvent.click(await screen.findByText('OK Computer'));
-  await screen.findByText(/No movie recommendations found/);
+  await screen.findByText('Airbag');
 
   fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
 
@@ -1266,6 +1185,289 @@ describe('shows logged only by season', () => {
   });
 });
 
+describe('album pages', () => {
+  const albumLibraryItem = (overrides = {}) =>
+    libraryItem({ id: 60, tmdb_id: 9, media_type: 'album', title: 'OK Computer', artists: 'Radiohead', ...overrides });
+  const songItem = (trackIndex, title, overrides = {}) =>
+    libraryItem({
+      id: 70 + trackIndex,
+      tmdb_id: 9,
+      media_type: 'song',
+      track_index: trackIndex,
+      title,
+      album_title: 'OK Computer',
+      artists: 'Radiohead',
+      ...overrides,
+    });
+
+  async function openAlbum() {
+    setRoutes({ music: [OK_COMPUTER] });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+    clickSearch();
+    fireEvent.click(await screen.findByText('OK Computer'));
+    await screen.findByText('Airbag');
+    return screen.findByLabelText('Status');
+  }
+
+  async function chooseSongs(...titles) {
+    await openAlbum();
+    fireEvent.click(screen.getByRole('radio', { name: 'Choose songs' }));
+    titles.forEach((title) => fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(title) })));
+  }
+
+  test('opens with the tracklist and no movie recommendations', async () => {
+    await openAlbum();
+    expect(screen.getByRole('radio', { name: 'Whole album' })).toBeChecked();
+    expect(screen.getByText('Paranoid Android')).toBeInTheDocument();
+    expect(screen.getByText('4:44')).toBeInTheDocument();
+    expect(screen.queryByText(/Recommended Movies/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View on Discogs' })).toHaveAttribute(
+      'href',
+      'https://www.discogs.com/master/9'
+    );
+  });
+
+  test('uses listening words', async () => {
+    const select = await openAlbum();
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'No status',
+      'Want to listen',
+      'Listening',
+      'Listened',
+    ]);
+  });
+
+  test('tracks can only be ticked after choosing songs', async () => {
+    await openAlbum();
+    const tracklist = screen.getByRole('region', { name: 'tracklist' });
+    expect(within(tracklist).queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Choose songs' }));
+    expect(within(tracklist).getAllByRole('checkbox')).toHaveLength(3);
+  });
+
+  test('logging the whole album saves one album entry and goes to My Library', async () => {
+    axios.put.mockResolvedValue({ data: albumLibraryItem({ rating: 9 }) });
+    await openAlbum();
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'finished' } });
+    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9.25' } });
+    fireEvent.change(screen.getByLabelText('Review'), { target: { value: 'Great' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('region', { name: 'my library' })).toBeInTheDocument();
+    expect(axios.put).toHaveBeenCalledTimes(1);
+    const [url, body] = axios.put.mock.calls[0];
+    expect(url).toMatch(/\/library\/album\/9$/);
+    expect(body).toMatchObject({
+      title: 'OK Computer',
+      artists: 'Radiohead',
+      status: 'finished',
+      rating: 9.25,
+      review: 'Great',
+    });
+  });
+
+  test('logging chosen songs saves them together and goes to My Library', async () => {
+    axios.put.mockResolvedValue({ data: [] });
+    await chooseSongs('Airbag', 'Karma Police');
+    expect(screen.getByText(/2 songs selected/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('region', { name: 'my library' })).toBeInTheDocument();
+    const [url, body] = axios.put.mock.calls[0];
+    expect(url).toMatch(/\/library\/album\/9\/songs$/);
+    expect(body.tracks).toEqual([
+      { track_index: 0, title: 'Airbag' },
+      { track_index: 2, title: 'Karma Police' },
+    ]);
+    expect(body).toMatchObject({ title: 'OK Computer', artists: 'Radiohead', rating: 9 });
+  });
+
+  test('saving needs at least one song chosen', async () => {
+    await chooseSongs();
+    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Choose at least one song to log.')).toBeInTheDocument();
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  test('unticking a song leaves it out', async () => {
+    axios.put.mockResolvedValue({ data: [] });
+    await chooseSongs('Airbag', 'Karma Police');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Airbag/ }));
+    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1].tracks).toEqual([{ track_index: 2, title: 'Karma Police' }]);
+  });
+
+  test('an existing album log fills the form', async () => {
+    setRoutes({ albumItem: albumLibraryItem({ status: 'in_progress', rating: 7.5 }) });
+    await openAlbum();
+    expect(screen.getByLabelText('Status')).toHaveValue('in_progress');
+    expect(screen.getByLabelText('My rating')).toHaveValue('7.5');
+  });
+
+  test('logged songs are marked in the tracklist', async () => {
+    setRoutes({ albumSongs: [songItem(2, 'Karma Police', { status: 'finished', rating: 9 })] });
+    await openAlbum();
+    expect(await screen.findByText('✓ Listened · ★ 9')).toBeInTheDocument();
+  });
+
+  test('choosing one logged song opens its log, and it can be cleared', async () => {
+    setRoutes({ albumSongs: [songItem(2, 'Karma Police', { status: 'finished', rating: 9 })] });
+    axios.delete.mockResolvedValue({ data: null });
+    await chooseSongs('Karma Police');
+    expect(screen.getByLabelText('My rating')).toHaveValue('9');
+
+    setRoutes({ albumSongs: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear log' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, clear' }));
+
+    await waitFor(() =>
+      expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/library\/song\/9\/2$/))
+    );
+    await waitFor(() => expect(screen.queryByText('✓ Listened · ★ 9')).not.toBeInTheDocument());
+  });
+
+  test('saving over logged songs warns first', async () => {
+    setRoutes({ albumSongs: [songItem(0, 'Airbag', { rating: 5 })] });
+    await chooseSongs('Airbag', 'Karma Police');
+    expect(screen.getByText(/1 of these is already logged. Saving replaces its log./)).toBeInTheDocument();
+  });
+
+  test('switching to whole album keeps the chosen songs out of it', async () => {
+    axios.put.mockResolvedValue({ data: albumLibraryItem({ rating: 8 }) });
+    await chooseSongs('Airbag');
+    fireEvent.click(screen.getByRole('radio', { name: 'Whole album' }));
+    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][0]).toMatch(/\/library\/album\/9$/);
+    expect(axios.put.mock.calls[0][1].tracks).toBeUndefined();
+  });
+
+  test('the whole album can go on a shelf', async () => {
+    setRoutes({ shelves: [SHELF] });
+    axios.post.mockResolvedValue({ data: {} });
+    await openAlbum();
+    setRoutes({ albumItem: albumLibraryItem({ shelf_ids: [5] }) });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Favorites' }));
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).toBeChecked());
+    expect(axios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/shelves/5/items'),
+      expect.objectContaining({ media_type: 'album', tmdb_id: 9, artists: 'Radiohead' })
+    );
+  });
+
+  test('if tracks fail to load, the whole album can still be logged', async () => {
+    setRoutes({ album: { response: { status: 429, data: { detail: 'Rate limited by Discogs' } } } });
+    setRoutes({ music: [OK_COMPUTER] });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+    clickSearch();
+    fireEvent.click(await screen.findByText('OK Computer'));
+
+    expect(await screen.findByText('Rate limited by Discogs')).toBeInTheDocument();
+    expect(screen.getByLabelText('Status')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Choose songs' })).toBeDisabled();
+  });
+
+  test('an album with no tracklist says so', async () => {
+    setRoutes({ album: { ...ALBUM, tracks: [] } });
+    setRoutes({ music: [OK_COMPUTER] });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+    clickSearch();
+    fireEvent.click(await screen.findByText('OK Computer'));
+    expect(await screen.findByText('No tracklist available for this album.')).toBeInTheDocument();
+  });
+
+  test('opening an album from My Library shows its page', async () => {
+    setRoutes({ library: [albumLibraryItem({ status: 'finished', rating: 9 })], albumItem: albumLibraryItem({ status: 'finished', rating: 9 }) });
+    render(<App />);
+    goTo('My Library');
+    expect(await screen.findByText('Listened', { selector: 'p' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('OK Computer'));
+
+    expect(await screen.findByText('Airbag')).toBeInTheDocument();
+    expect(await screen.findByLabelText('My rating')).toHaveValue('9');
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/albums/9'));
+  });
+
+  test('a song opens from My Library and saves to itself', async () => {
+    const song = songItem(2, 'Karma Police', { status: 'finished', rating: 9 });
+    setRoutes({ library: [song], item: song });
+    axios.put.mockResolvedValue({ data: song });
+    render(<App />);
+    goTo('My Library');
+    expect(await screen.findByText('OK Computer')).toBeInTheDocument();
+    expect(screen.getByText('Song')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Karma Police'));
+
+    fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: '8' } });
+    expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/library\/song\/9\/2$/));
+    expect(screen.queryByRole('heading', { name: 'Overview' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][0]).toMatch(/\/library\/song\/9\/2$/);
+    expect(axios.put.mock.calls[0][1]).toMatchObject({ title: 'Karma Police', album_title: 'OK Computer', rating: 8 });
+  });
+
+  test('a song goes on a shelf using its place on the album', async () => {
+    const song = songItem(2, 'Karma Police', { rating: 9 });
+    setRoutes({ library: [song], item: song, shelves: [SHELF] });
+    axios.post.mockResolvedValue({ data: {} });
+    render(<App />);
+    goTo('My Library');
+    fireEvent.click(await screen.findByText('Karma Police'));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Favorites' }));
+
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ media_type: 'song', tmdb_id: 9, track_index: 2 });
+  });
+
+  test('music search results are marked when logged', async () => {
+    setRoutes({
+      music: [OK_COMPUTER],
+      library: [albumLibraryItem({ status: 'finished', rating: 9 })],
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+    clickSearch();
+    expect(await screen.findByText('✓ Listened · ★ 9')).toBeInTheDocument();
+  });
+
+  test('music in the All search is marked when logged', async () => {
+    setRoutes({ musicText: [OK_COMPUTER], library: [albumLibraryItem({ rating: 9 })] });
+    render(<App />);
+    search('radiohead');
+    expect(await screen.findByText('✓ Logged · ★ 9')).toBeInTheDocument();
+  });
+
+  test('My Library can filter to albums or songs', async () => {
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText(/Nothing logged yet/);
+    fireEvent.change(screen.getByLabelText('Filter by type'), { target: { value: 'song' } });
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), {
+        params: { media_type: 'song' },
+      })
+    );
+  });
+});
+
 test('My Library lists logged titles with my rating', async () => {
   setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
   render(<App />);
@@ -1451,9 +1653,9 @@ describe('status words', () => {
     ['book', 'want', 'Want to read'],
     ['book', 'in_progress', 'Reading'],
     ['book', 'finished', 'Read'],
-    ['music', 'want', 'Want to listen'],
-    ['music', 'in_progress', 'Listening'],
-    ['music', 'finished', 'Listened'],
+    ['album', 'want', 'Want to listen'],
+    ['album', 'in_progress', 'Listening'],
+    ['song', 'finished', 'Listened'],
     ['movie', 'in_progress', 'Watching'],
   ])('a %s that is %s says %s', (mediaType, status, label) => {
     expect(statusLabels(mediaType)[status]).toBe(label);

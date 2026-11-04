@@ -6,15 +6,23 @@ from pathlib import Path
 
 DEFAULT_DB_PATH = Path(__file__).parent / "medialibrary.db"
 
-# library_items holds one row per movie or show, with a copy of its TMDB details so the library can
-# be shown without calling TMDB. Log fields are all optional because a title can be on a shelf without
-# being logged. A rating is any number from 0 to 10.
+# library_items holds one row per movie, show, album or song, with a copy of its details so the library
+# can be shown without calling TMDB or Discogs. Log fields are all optional because a title can be on a
+# shelf without being logged. A rating is any number from 0 to 10.
+#
+# tmdb_id is the source's ID: TMDB's for movies and shows, and the Discogs master's for albums and songs.
+# poster_path is a TMDB path for movies and shows, and a full image address for music. A song has no ID
+# of its own, so it's identified by its album's ID plus its place in the tracklist (track_index, which
+# stays -1 for everything else).
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS library_items (
     id INTEGER PRIMARY KEY,
-    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv')),
+    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv', 'album', 'song')),
     tmdb_id INTEGER NOT NULL,
+    track_index INTEGER NOT NULL DEFAULT -1,
     title TEXT NOT NULL,
+    artists TEXT,
+    album_title TEXT,
     year TEXT,
     release_date TEXT,
     poster_path TEXT,
@@ -25,7 +33,7 @@ CREATE TABLE IF NOT EXISTS library_items (
     finished_on TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (media_type, tmdb_id)
+    UNIQUE (media_type, tmdb_id, track_index)
 );
 
 CREATE TABLE IF NOT EXISTS season_logs (
@@ -72,7 +80,7 @@ def get_connection():
 
 
 # Stored in the database file, so an older library can be upgraded when the app starts.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 # Version 0 only allowed ratings of 0.5 and up. SQLite can't edit a CHECK rule in place, so each table
@@ -167,6 +175,61 @@ def _upgrade_to_version_3():
         connection.execute("ALTER TABLE library_items ADD COLUMN release_date TEXT")
 
 
+# Version 3 only held movies and shows. Allowing other types means replacing a CHECK rule, so the table is
+# rebuilt with every row and ID kept, which leaves shelves and season logs still pointing at the right rows.
+def _upgrade_to_version_4():
+    path = _db_path()
+    shutil.copy2(path, f"{path}-before-music-logging")
+
+    connection = sqlite3.connect(path, isolation_level=None)
+    try:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("BEGIN")
+        try:
+            connection.execute(
+                """
+                CREATE TABLE new_library_items (
+                    id INTEGER PRIMARY KEY,
+                    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv', 'album', 'song')),
+                    tmdb_id INTEGER NOT NULL,
+                    track_index INTEGER NOT NULL DEFAULT -1,
+                    title TEXT NOT NULL,
+                    artists TEXT,
+                    album_title TEXT,
+                    year TEXT,
+                    release_date TEXT,
+                    poster_path TEXT,
+                    overview TEXT,
+                    status TEXT CHECK (status IN ('want', 'in_progress', 'finished')),
+                    rating REAL CHECK (rating BETWEEN 0 AND 10),
+                    review TEXT,
+                    finished_on TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE (media_type, tmdb_id, track_index)
+                )
+                """
+            )
+            columns = (
+                "id, media_type, tmdb_id, title, year, release_date, poster_path, overview, "
+                "status, rating, review, finished_on, created_at, updated_at"
+            )
+            connection.execute(
+                f"INSERT INTO new_library_items ({columns}) SELECT {columns} FROM library_items"
+            )
+            connection.execute("DROP TABLE library_items")
+            connection.execute("ALTER TABLE new_library_items RENAME TO library_items")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("Database upgrade would break links between tables")
+            connection.execute("PRAGMA user_version = 4")
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+
+
 def init_db():
     with get_connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -180,6 +243,8 @@ def init_db():
         _upgrade_to_version_2()
     if has_library and version < 3:
         _upgrade_to_version_3()
+    if has_library and version < 4:
+        _upgrade_to_version_4()
 
     with get_connection() as connection:
         connection.executescript(SCHEMA)

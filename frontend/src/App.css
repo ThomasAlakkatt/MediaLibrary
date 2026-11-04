@@ -1305,3 +1305,79 @@ main {
 :root[data-theme='dark'] .logged-badge {
   color: var(--green-500);
 }
+
+.log-scope {
+  border: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.log-scope legend {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.log-scope label {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.95rem;
+  gap: 6px;
+}
+
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+}
+
+.track-row {
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.track-content {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 10px 14px;
+}
+
+label.track-content {
+  cursor: pointer;
+}
+
+.track-position {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 2em;
+}
+
+.track-title {
+  color: var(--ink);
+  flex: 1 1 160px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.track-content .logged-badge {
+  margin: 0;
+}
+
+.music-card .result-info .logged-badge {
+  margin-top: 2px;
+}

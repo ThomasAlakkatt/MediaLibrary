@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_URL, getErrorMessage } from './api';
-import { Clapperboard, SpinningRecord } from './Loaders';
+import AlbumDetail from './AlbumDetail';
+import { API_URL, getErrorMessage, releaseToMedia } from './api';
+import { SpinningRecord } from './Loaders';
+import { LoggedBadge, useLoggedTitles } from './MediaCard';
 
 // initialRelease opens straight to that release, for one picked from the All search. onBack then
 // returns to that search, since there are no music results here to go back to.
-export default function MusicSearch({ initialRelease, onBack }) {
+export default function MusicSearch({ initialRelease, onBack, onLogSubmitted }) {
   const [artistName, setArtistName] = useState('');
   const [releaseTitle, setReleaseTitle] = useState('');
   const [results, setResults] = useState([]);
@@ -16,8 +18,6 @@ export default function MusicSearch({ initialRelease, onBack }) {
   const [hasSearched, setHasSearched] = useState(false);
 
   const [selectedRelease, setSelectedRelease] = useState(initialRelease ?? null);
-  const [movieCache, setMovieCache] = useState({});
-  const [moviesLoadingId, setMoviesLoadingId] = useState(null);
 
   const [artistSuggestions, setArtistSuggestions] = useState([]);
   const [releaseSuggestions, setReleaseSuggestions] = useState([]);
@@ -178,30 +178,8 @@ export default function MusicSearch({ initialRelease, onBack }) {
     await performSearch(page - 1);
   }
 
-  async function handleReleaseClick(release) {
+  function handleReleaseClick(release) {
     setSelectedRelease(release);
-
-    // Only successful lookups are kept, so a failed one is tried again next time.
-    if (movieCache[release.id]?.movies) {
-      return;
-    }
-
-    setMovieCache((prev) => ({ ...prev, [release.id]: undefined }));
-    setMoviesLoadingId(release.id);
-
-    try {
-      const response = await axios.get(`${API_URL}/movies/${release.id}`);
-      setMovieCache((prev) => ({ ...prev, [release.id]: { movies: response.data } }));
-    } catch (err) {
-      setMovieCache((prev) => ({
-        ...prev,
-        [release.id]: {
-          error: getErrorMessage(err, 'Something went wrong fetching movie recommendations.'),
-        },
-      }));
-    } finally {
-      setMoviesLoadingId((current) => (current === release.id ? null : current));
-    }
   }
 
   function handleBackToResults() {
@@ -209,13 +187,7 @@ export default function MusicSearch({ initialRelease, onBack }) {
     else setSelectedRelease(null);
   }
 
-  useEffect(() => {
-    if (initialRelease) handleReleaseClick(initialRelease);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialRelease]);
-
-  const selectedCacheEntry = selectedRelease ? movieCache[selectedRelease.id] : null;
-  const selectedImage = selectedRelease && (selectedRelease.cover_image || selectedRelease.thumb);
+  const logs = useLoggedTitles(results, selectedRelease);
 
   return (
     <>
@@ -350,6 +322,7 @@ export default function MusicSearch({ initialRelease, onBack }) {
                       <h2>{release.title}</h2>
                       <p className="result-artist">{release.artists.join(', ')}</p>
                       <p className="result-year">{release.year}</p>
+                      {logs[`album-${release.id}`] && <LoggedBadge log={logs[`album-${release.id}`]} />}
                     </div>
                   </div>
                 );
@@ -384,111 +357,11 @@ export default function MusicSearch({ initialRelease, onBack }) {
       )}
 
       {selectedRelease && (
-        <section aria-label="release detail" className="detail-view">
-          <button className="back-btn" onClick={handleBackToResults}>
-            ← Back to results
-          </button>
-
-          <div className="detail-layout">
-            <div className="detail-release">
-              {selectedImage ? (
-                <img
-                  className="detail-release-image"
-                  src={selectedImage}
-                  alt={`${selectedRelease.title} cover art`}
-                />
-              ) : (
-                <div className="detail-release-image detail-release-image--placeholder">
-                  No Image
-                </div>
-              )}
-              <h2>{selectedRelease.title}</h2>
-              <p className="detail-release-artist">{selectedRelease.artists.join(', ')}</p>
-              <p className="detail-release-year">{selectedRelease.year}</p>
-            </div>
-
-            <div className="detail-movies">
-              <h3>Recommended Movies</h3>
-              {moviesLoadingId === selectedRelease.id && (
-                <Clapperboard label="Loading movies…" />
-              )}
-              {selectedCacheEntry?.error && (
-                <div className="movie-retry">
-                  <p className="movie-status movie-error">{selectedCacheEntry.error}</p>
-                  <button
-                    type="button"
-                    className="secondary-btn"
-                    onClick={() => handleReleaseClick(selectedRelease)}
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
-              {selectedCacheEntry?.movies?.length === 0 && (
-                <p className="movie-status">No movie recommendations found for this release.</p>
-              )}
-              {selectedCacheEntry?.movies?.length > 0 && (
-                <div className="movie-list">
-                  {selectedCacheEntry.movies.map((movie) => (
-                    <div className="movie-card" key={movie.id}>
-                      <a
-                        className="movie-poster-link"
-                        href={`https://www.themoviedb.org/movie/${movie.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {movie.poster_path ? (
-                          <img
-                            className="movie-poster"
-                            src={`https://image.tmdb.org/t/p/w200${movie.poster_path}`}
-                            alt={`${movie.title} poster`}
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="movie-poster movie-poster--placeholder">No Image</div>
-                        )}
-                      </a>
-                      <div className="movie-info">
-                        <a
-                          className="movie-title-link"
-                          href={`https://www.themoviedb.org/movie/${movie.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <h4>{movie.title}</h4>
-                        </a>
-                        <div className="movie-meta">
-                          {typeof movie.rating === 'number' && (
-                            <span className="movie-rating">★ {movie.rating.toFixed(1)}</span>
-                          )}
-                          {movie.release_date && (
-                            <span className="movie-release-date">
-                              {movie.release_date.slice(0, 4)}
-                            </span>
-                          )}
-                        </div>
-                        {movie.genres?.length > 0 && (
-                          <p className="movie-genres">{movie.genres.join(', ')}</p>
-                        )}
-                        {movie.overview && <p className="movie-overview">{movie.overview}</p>}
-                        {movie.trailer_url && (
-                          <a
-                            className="movie-trailer-link"
-                            href={movie.trailer_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            ▶ Watch Trailer
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+        <AlbumDetail
+          item={releaseToMedia(selectedRelease)}
+          onBack={handleBackToResults}
+          onLogSubmitted={onLogSubmitted}
+        />
       )}
     </>
   );

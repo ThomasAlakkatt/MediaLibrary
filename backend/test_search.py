@@ -373,3 +373,72 @@ def test_part_of_a_title_with_the_artist_is_not_a_clear_match(client, monkeypatc
     fake_discogs(monkeypatch, results={"general": [release(1, "Radiohead - OK Computer")]})
     response = client.get("/search/music", params={"query": "radiohead computer"}).json()
     assert response[0]["match"] is None
+
+
+MASTER = {
+    "id": 21491,
+    "title": "OK Computer",
+    "year": 1997,
+    "artists": [{"name": "Radiohead"}],
+    "images": [{"type": "primary", "uri": "https://img/ok.jpg"}],
+    "genres": ["Rock"],
+    "styles": ["Alternative Rock"],
+    "tracklist": [
+        {"position": "", "type_": "heading", "title": "Eeny", "duration": ""},
+        {"position": "A1", "type_": "track", "title": "Airbag", "duration": "4:44"},
+        {"position": "A2", "type_": "track", "title": "Paranoid Android", "duration": ""},
+        {"position": "", "type_": "heading", "title": "Meeny", "duration": ""},
+        {"position": "B1", "type_": "track", "title": "Karma Police", "duration": "4:21"},
+    ],
+}
+
+
+def fake_master(monkeypatch, status=200, body=MASTER):
+    def fetch(client, method, url, data=None, headers=None, json_body=True):
+        if status != 200:
+            return json.dumps({"message": "failed"}).encode(), status
+        return json.dumps(body).encode(), 200
+
+    monkeypatch.setattr(music_service.client._fetcher, "fetch", fetch)
+
+
+def test_album_details_and_tracklist(client, monkeypatch):
+    fake_master(monkeypatch)
+    body = client.get("/albums/21491").json()
+
+    assert (body["id"], body["title"], body["artists"], body["year"]) == (
+        21491,
+        "OK Computer",
+        ["Radiohead"],
+        "1997",
+    )
+    assert body["cover_image"] == "https://img/ok.jpg"
+    assert body["tracks"] == [
+        {"track_index": 0, "position": "A1", "title": "Airbag", "duration": "4:44"},
+        {"track_index": 1, "position": "A2", "title": "Paranoid Android", "duration": None},
+        {"track_index": 2, "position": "B1", "title": "Karma Police", "duration": "4:21"},
+    ]
+
+
+def test_album_with_missing_details(client, monkeypatch):
+    fake_master(monkeypatch, body={"id": 1, "title": "Bare", "artists": [{"name": "Dune (3)"}]})
+    body = client.get("/albums/1").json()
+    assert (body["artists"], body["year"], body["cover_image"], body["tracks"]) == (
+        ["Dune"],
+        None,
+        None,
+        [],
+    )
+
+
+@pytest.mark.parametrize(
+    "status, expected",
+    [(404, 404), (429, 429), (500, 502)],
+)
+def test_album_lookup_failures(client, monkeypatch, status, expected):
+    fake_master(monkeypatch, status=status)
+    assert client.get("/albums/21491").status_code == expected
+
+
+def test_movie_recommendations_are_gone(client):
+    assert client.get("/movies/1").status_code == 404

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { API_URL, getErrorMessage, libraryItemToMedia, posterUrl } from './api';
 import { Clapperboard } from './Loaders';
 import { TYPE_LABELS } from './MediaCard';
-import MediaDetail from './MediaDetail';
+import TitleDetail from './TitleDetail';
 
 function moveItem(items, fromIndex, toIndex) {
   const reordered = [...items];
@@ -92,7 +92,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
 
   if (selected) {
     return (
-      <MediaDetail
+      <TitleDetail
         item={libraryItemToMedia(selected)}
         backLabel={`← Back to ${shelf.name}`}
         onBack={() => setSelected(null)}
@@ -160,7 +160,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
 
           {shelf.items.length === 0 ? (
             <p className="empty-state-hint page-empty">
-              This shelf is empty. Search for a movie or show, then open it to add it here.
+              This shelf is empty. Search for something, then open it to add it here.
             </p>
           ) : (
             <ol className="shelf-items">
@@ -203,7 +203,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                   <button type="button" className="shelf-item-title" onClick={() => setSelected(item)}>
                     <span className="season-name">{item.title}</span>
                     <span className="season-meta">
-                      {[TYPE_LABELS[item.media_type], item.year].filter(Boolean).join(' · ')}
+                      {[TYPE_LABELS[item.media_type], item.artists, item.year].filter(Boolean).join(' · ')}
                     </span>
                   </button>
                   {item.rating !== null && <span className="my-rating">★ {item.rating}</span>}
@@ -303,7 +303,7 @@ function ShelfList({ onOpenShelf }) {
       {shelves === null && <Clapperboard label="Loading shelves…" />}
       {shelves?.length === 0 && !error && (
         <p className="empty-state-hint page-empty">
-          No shelves yet. Create one to mix movies and shows, like a playlist.
+          No shelves yet. Create one to mix movies, shows and music, like a playlist.
         </p>
       )}
       {shelves?.length > 0 && (

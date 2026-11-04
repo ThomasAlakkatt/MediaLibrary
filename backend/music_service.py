@@ -53,21 +53,12 @@ class ReleaseNotFound(Exception):
 # address
 
 
-def release_details(release_id_number):
+# Looks up an album by its Discogs master ID, including its tracklist.
+def get_album(master_id):
     try:
-        # search_releases() searches with type="master", so the IDs it returns are master IDs,
-        # not release IDs. Master objects don't have "artists"/"country" directly, so those come
-        # from the master's main_release instead.
-        response = client.master(release_id_number)
-        main_release = response.main_release
-        release_details_dict = {
-            "year": response.year,
-            "styles": response.styles,
-            "artists": parse_artists(main_release.artists),
-            "country": main_release.country,
-            "genres": response.genres,
-        }
-        return release_details_dict
+        master = client.master(master_id)
+        master.refresh()
+        data = master.data
     except HTTPError as e:
         print(f"Discogs API Error {e}")
         if e.status_code == 404:
@@ -79,18 +70,30 @@ def release_details(release_id_number):
         print(f"Internal Error {e}")
         raise DiscogsUnavailable() from e
 
-
-# This function parses the artists list that is returned from the client, then returns the parsed list of one or more strings,
-# I dont think I need artist ID at this point, maybe down the line for reference info, and pictures of the artist which would be cool
-def parse_artists(artists):
-    # iterate over the list, this goes through each artist
-    # make a dict with artist id as a key and name as value, we can add the pictures in
-    # later when we wanna display, when we do this we can change format
-    artist_dict = {}
-    for artist_entry in artists:
-        cleaned_artist_name = clean_name(artist_entry.name)
-        artist_dict[artist_entry.id] = {"name": cleaned_artist_name}
-    return artist_dict
+    # A tracklist can also hold section headings, like the "Eeny" and "Meeny" sides of OK Computer. A
+    # song is identified by its place among the real tracks, so headings aren't counted.
+    tracks = [
+        {
+            "track_index": index,
+            "position": track.get("position") or None,
+            "title": track.get("title"),
+            "duration": track.get("duration") or None,
+        }
+        for index, track in enumerate(
+            track for track in data.get("tracklist", []) if track.get("type_") == "track"
+        )
+    ]
+    images = data.get("images") or []
+    return {
+        "id": data.get("id"),
+        "title": data.get("title"),
+        "artists": [clean_name(artist.get("name", "")) for artist in data.get("artists", [])],
+        "year": str(data["year"]) if data.get("year") else None,
+        "cover_image": images[0].get("uri") if images else None,
+        "genres": data.get("genres") or [],
+        "styles": data.get("styles") or [],
+        "tracks": tracks,
+    }
 
 
 # This search function (as it is now) behaves like the "Advanced Search" feature in Discogs
