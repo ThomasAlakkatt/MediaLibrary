@@ -117,6 +117,12 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
       return;
     }
 
+    // The automatic date alone isn't a reason to add a title to the library.
+    if (dateIsDefault && !draft.status && rating === null && !draft.review.trim()) {
+      setError('Add a status, rating or review before saving.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setMessage(null);

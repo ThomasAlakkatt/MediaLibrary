@@ -451,6 +451,7 @@ test.each([
   await openFromSearch(DUNE);
 
   fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: typed } });
+  fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'finished' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
   await waitFor(() => expect(axios.put).toHaveBeenCalled());
@@ -613,6 +614,60 @@ test('an existing log fills in the form', async () => {
   expect(await screen.findByLabelText('My rating')).toHaveValue('7.5');
   expect(screen.getByLabelText('Status')).toHaveValue('in_progress');
   expect(screen.getByLabelText('Review')).toHaveValue('So far so good');
+});
+
+describe('saving with nothing filled in', () => {
+  test('a new entry is not saved', async () => {
+    await openFromSearch(DUNE);
+    await screen.findByLabelText('My rating');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Add a status, rating or review before saving.')).toBeInTheDocument();
+    expect(axios.put).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'title detail' })).toBeInTheDocument();
+  });
+
+  test('a review of only spaces does not count', async () => {
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('Review'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Add a status, rating or review before saving.')).toBeInTheDocument();
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  test('a date picked by hand is enough to save', async () => {
+    axios.put.mockResolvedValue({ data: libraryItem({ finished_on: '2026-01-15' }) });
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('Date finished'), { target: { value: '2026-01-15' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(axios.put.mock.calls[0][1].finished_on).toBe('2026-01-15');
+  });
+
+  test.each([
+    ['a status', 'Status', 'want'],
+    ['a rating of 0', 'My rating', '0'],
+    ['a review', 'Review', 'Good'],
+  ])('%s is enough to save', async (_, label, value) => {
+    axios.put.mockResolvedValue({ data: libraryItem() });
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText(label), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+  });
+
+  test('an existing log can have everything removed', async () => {
+    setRoutes({ item: libraryItem({ status: 'want' }) });
+    axios.put.mockResolvedValue({ data: null });
+    await openFromSearch(DUNE);
+    fireEvent.change(await screen.findByLabelText('Status'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+  });
 });
 
 test('a failed save shows the error and keeps what was typed', async () => {
@@ -788,7 +843,7 @@ test('saving a log opened from a shelf goes to My Library', async () => {
   axios.put.mockResolvedValue({ data: libraryItem({ rating: 9 }) });
   render(<App />);
   fireEvent.click(await screen.findByText('Dune'));
-  await screen.findByLabelText('Status');
+  fireEvent.change(await screen.findByLabelText('My rating'), { target: { value: '9' } });
 
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
