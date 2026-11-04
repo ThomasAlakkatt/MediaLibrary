@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   API_URL,
-  STATUS_LABELS,
+  MIXED_STATUS_LABELS,
   formatDate,
   getErrorMessage,
   libraryItemToMedia,
+  statusLabels,
 } from './api';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
@@ -13,8 +14,8 @@ import MediaDetail from './MediaDetail';
 
 const SORT_OPTIONS = [
   { value: 'changed:desc', label: 'Recently changed' },
-  { value: 'watched:desc', label: 'Date watched: newest first' },
-  { value: 'watched:asc', label: 'Date watched: oldest first' },
+  { value: 'watched:desc', label: 'Date finished: newest first' },
+  { value: 'watched:asc', label: 'Date finished: oldest first' },
   { value: 'release:desc', label: 'Release date: newest first' },
   { value: 'release:asc', label: 'Release date: oldest first' },
 ];
@@ -99,7 +100,7 @@ export default function LibraryView() {
             onChange={(event) => setStatus(event.target.value)}
           >
             <option value="">Any status</option>
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+            {Object.entries(MIXED_STATUS_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -126,9 +127,13 @@ export default function LibraryView() {
               onSelect={setSelected}
             >
               {sortKind === 'watched' && item.watched_date ? (
-                <p className="result-year">Watched {formatDate(item.watched_date)}</p>
+                <p className="result-year">
+                  {statusLabels(item.media_type).finished} {formatDate(item.watched_date)}
+                </p>
               ) : (
-                item.status && <p className="result-year">{STATUS_LABELS[item.status]}</p>
+                item.status && (
+                  <p className="result-year">{statusLabels(item.media_type)[item.status]}</p>
+                )
               )}
               {sortKind === 'release' && (item.release_date || item.year) && (
                 <p className="result-year">Released {formatDate(item.release_date || item.year)}</p>

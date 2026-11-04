@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { vi, test, expect, beforeEach, afterEach, describe } from 'vitest';
 import axios from 'axios';
 import App from './App';
+import { statusLabels } from './api';
 
 vi.mock('axios');
 
@@ -1003,6 +1004,62 @@ describe('sorting My Library', () => {
 
     await waitFor(() => expect(axios.put).toHaveBeenCalled());
     expect(axios.put.mock.calls[0][1].release_date).toBe('2021-09-15');
+  });
+});
+
+describe('status words', () => {
+  function optionLabels(select) {
+    return within(select).getAllByRole('option').map((option) => option.textContent);
+  }
+
+  test.each([
+    ['a movie', DUNE],
+    ['a show', BREAKING_BAD],
+  ])('%s uses watch words', async (_, item) => {
+    await openFromSearch(item);
+    expect(optionLabels(await screen.findByLabelText('Status'))).toEqual([
+      'No status',
+      'Want to watch',
+      'Watching',
+      'Watched',
+    ]);
+  });
+
+  test('season rows use watch words', async () => {
+    await openFromSearch(BREAKING_BAD);
+    expect(optionLabels(await screen.findByLabelText('Season 1 status'))).toContain('Watched');
+  });
+
+  test('the My Library filter uses words that fit every type', async () => {
+    render(<App />);
+    goTo('My Library');
+    expect(optionLabels(await screen.findByLabelText('Filter by status'))).toEqual([
+      'Any status',
+      'Planned',
+      'In progress',
+      'Finished',
+    ]);
+  });
+
+  test('the My Library sort says date finished', async () => {
+    render(<App />);
+    goTo('My Library');
+    const options = optionLabels(await screen.findByLabelText('Sort by'));
+    expect(options).toContain('Date finished: newest first');
+    expect(options).toContain('Date finished: oldest first');
+    expect(options.join()).not.toMatch(/watched/i);
+  });
+
+  test.each([
+    ['book', 'want', 'Want to read'],
+    ['book', 'in_progress', 'Reading'],
+    ['book', 'finished', 'Read'],
+    ['music', 'want', 'Want to listen'],
+    ['music', 'in_progress', 'Listening'],
+    ['music', 'finished', 'Listened'],
+    ['movie', 'in_progress', 'Watching'],
+  ])('a %s that is %s says %s', (mediaType, status, label) => {
+    expect(statusLabels(mediaType)[status]).toBe(label);
   });
 });
 

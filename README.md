@@ -6,7 +6,7 @@ This project is at an early stage and started as a copy of an earlier project, M
 
 - **Search:** search movies, shows and music together, or filter to one of them.
 - **Movies and shows:** search with the TMDB API, and log a status, rating, review and date finished. Each season of a show can also have its own status and date finished. A rating can be any number from 0 to 10, with up to 2 decimal places.
-- **My Library:** filter by type and status, and sort by date watched or release date.
+- **My Library:** filter by type and status, and sort by date finished or release date.
 - **Shelves:** ordered lists that mix movies and shows, like playlists.
 - **Music:** search with the Discogs API, and get movie recommendations for a release. Music can't be logged yet.
 

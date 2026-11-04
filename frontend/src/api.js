@@ -6,10 +6,25 @@ export function getErrorMessage(err, fallback) {
   return typeof detail === 'string' ? detail : fallback;
 }
 
-export const STATUS_LABELS = {
-  want: 'Want to watch',
-  in_progress: 'Watching',
-  finished: 'Watched',
+const WATCH_LABELS = { want: 'Want to watch', in_progress: 'Watching', finished: 'Watched' };
+
+// The words for a status depend on what kind of title it is.
+const STATUS_LABELS_BY_TYPE = {
+  movie: WATCH_LABELS,
+  tv: WATCH_LABELS,
+  book: { want: 'Want to read', in_progress: 'Reading', finished: 'Read' },
+  music: { want: 'Want to listen', in_progress: 'Listening', finished: 'Listened' },
+};
+
+export function statusLabels(mediaType) {
+  return STATUS_LABELS_BY_TYPE[mediaType];
+}
+
+// For places that cover every kind of title at once, like the My Library filter.
+export const MIXED_STATUS_LABELS = {
+  want: 'Planned',
+  in_progress: 'In progress',
+  finished: 'Finished',
 };
 
 export const INVALID_RATING_MESSAGE =

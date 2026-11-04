@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   API_URL,
   INVALID_RATING_MESSAGE,
-  STATUS_LABELS,
+  statusLabels,
   getErrorMessage,
   parseRating,
   posterUrl,
@@ -18,7 +18,7 @@ function pluralize(count, word) {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
-function StatusSelect({ id, label, value, onChange, disabled }) {
+function StatusSelect({ id, label, mediaType, value, onChange, disabled }) {
   return (
     <select
       id={id}
@@ -28,7 +28,7 @@ function StatusSelect({ id, label, value, onChange, disabled }) {
       onChange={(event) => onChange(event.target.value || null)}
     >
       <option value="">No status</option>
-      {Object.entries(STATUS_LABELS).map(([status, text]) => (
+      {Object.entries(statusLabels(mediaType)).map(([status, text]) => (
         <option key={status} value={status}>
           {text}
         </option>
@@ -165,6 +165,7 @@ function LogForm({ item, log, onSaved, onLogSubmitted }) {
           <label htmlFor="log-status">Status</label>
           <StatusSelect
             id="log-status"
+            mediaType={item.media_type}
             value={draft.status}
             onChange={handleStatusChange}
           />
@@ -278,6 +279,7 @@ function SeasonRow({ item, season, seasonLog, onSaved }) {
       <div className="season-controls">
         <StatusSelect
           label={`${name} status`}
+          mediaType={item.media_type}
           value={seasonLog?.status}
           disabled={saving}
           onChange={(status) => save({ status })}
