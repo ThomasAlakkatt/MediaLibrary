@@ -194,7 +194,20 @@ def _sort_by_date(items, date_of, order):
     return sorted(items, key=sort_key, reverse=order == "desc")
 
 
-# sort is "changed", "watched" or "release", and order is "desc" (newest first) or "asc".
+# Being watched comes first, then waiting to be watched, then finished, then no status at all. A show
+# logged only by season goes by its seasons.
+def _status_rank(item):
+    status_order = ("in_progress", "want", "finished")
+    if item["status"]:
+        return status_order.index(item["status"])
+    for rank, status in enumerate(status_order):
+        if item["season_counts"][status] > 0:
+            return rank
+    return len(status_order)
+
+
+# sort is "changed", "watched", "release", "status", "rating" or "title". order is "desc" (newest or
+# highest first) or "asc", and doesn't apply to status or title, which each have one natural order.
 def list_library(media_type=None, status=None, sort="changed", order="desc"):
     if sort == "release":
         _fill_missing_release_dates()
@@ -232,6 +245,20 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
 
     if sort == "release":
         return _sort_by_date(items, lambda item: item["release_date"] or item["year"], order)
+
+    if sort == "status":
+        return sorted(items, key=_status_rank)
+
+    if sort == "rating":
+        direction = -1 if order == "desc" else 1
+        # Unrated titles stay last in both directions, since they haven't scored low or high.
+        return sorted(
+            items,
+            key=lambda item: (item["rating"] is None, direction * (item["rating"] or 0)),
+        )
+
+    if sort == "title":
+        return sorted(items, key=lambda item: item["title"].casefold())
 
     return items if order == "desc" else items[::-1]
 

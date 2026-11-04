@@ -22,6 +22,10 @@ const SORT_OPTIONS = [
   { value: 'watched:asc', label: 'Date finished: oldest first' },
   { value: 'release:desc', label: 'Release date: newest first' },
   { value: 'release:asc', label: 'Release date: oldest first' },
+  { value: 'status', label: 'Status' },
+  { value: 'rating:desc', label: 'Rating: highest first' },
+  { value: 'rating:asc', label: 'Rating: lowest first' },
+  { value: 'title', label: 'Title: A to Z' },
 ];
 
 export default function LibraryView() {
@@ -43,7 +47,9 @@ export default function LibraryView() {
     if (mediaType) params.media_type = mediaType;
     if (status) params.status = status;
     if (sortOption !== 'changed:desc') {
-      [params.sort, params.order] = sortOption.split(':');
+      const [sort, order] = sortOption.split(':');
+      params.sort = sort;
+      if (order) params.order = order;
     }
     axios
       .get(`${API_URL}/library`, { params })

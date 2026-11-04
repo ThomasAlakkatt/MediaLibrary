@@ -2149,6 +2149,8 @@ describe('sorting My Library', () => {
     ['watched:asc', 'watched', 'asc'],
     ['release:desc', 'release', 'desc'],
     ['release:asc', 'release', 'asc'],
+    ['rating:desc', 'rating', 'desc'],
+    ['rating:asc', 'rating', 'asc'],
   ])('choosing %s asks for that order', async (option, sort, order) => {
     render(<App />);
     goTo('My Library');
@@ -2161,6 +2163,39 @@ describe('sorting My Library', () => {
         params: { sort, order },
       })
     );
+  });
+
+  test.each(['status', 'title'])('choosing %s has no direction to send', async (option) => {
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText(/Nothing logged yet/);
+
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: option } });
+
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenLastCalledWith(expect.stringContaining('/library'), {
+        params: { sort: option },
+      })
+    );
+  });
+
+  test('offers the same sorts as a shelf, apart from shelf order', async () => {
+    render(<App />);
+    goTo('My Library');
+    const options = within(await screen.findByLabelText('Sort by'))
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(options).toEqual([
+      'Recently changed',
+      'Date finished: newest first',
+      'Date finished: oldest first',
+      'Release date: newest first',
+      'Release date: oldest first',
+      'Status',
+      'Rating: highest first',
+      'Rating: lowest first',
+      'Title: A to Z',
+    ]);
   });
 
   test('sorting combines with filters', async () => {

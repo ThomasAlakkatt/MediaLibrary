@@ -240,7 +240,7 @@ def album(album_id: int):
 def library(
     media_type: Optional[MediaType] = None,
     status: Optional[Status] = None,
-    sort: Literal["changed", "watched", "release"] = "changed",
+    sort: Literal["changed", "watched", "release", "status", "rating", "title"] = "changed",
     order: Literal["desc", "asc"] = "desc",
 ):
     return library_service.list_library(media_type, status, sort, order)

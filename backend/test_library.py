@@ -611,7 +611,7 @@ def test_sorting_works_with_filters(client, fixed_today):
     assert library_titles(client, sort="watched", status="finished") == ["B", "A"]
 
 
-@pytest.mark.parametrize("params", [{"sort": "title"}, {"order": "sideways"}])
+@pytest.mark.parametrize("params", [{"sort": "popularity"}, {"order": "sideways"}])
 def test_unknown_sorts_are_rejected(client, params):
     assert client.get("/library", params=params).status_code == 422
 
@@ -865,3 +865,50 @@ def test_saved_shelf_order_is_unaffected_by_the_summaries(client):
     response = client.put(f"/shelves/{shelf_id}/order", json={"item_ids": ids[::-1]})
     assert titles(response.json()) == ["Heat", "Breaking Bad", "Dune"]
     assert [i["position"] for i in response.json()["items"]] == [0, 1, 2]
+
+
+def test_sort_library_by_status(client):
+    log_movie(client, movie(1, "Done"), status="finished")
+    log_movie(client, movie(2, "Rated Only"), rating=5)
+    log_movie(client, movie(3, "Planned"), status="want")
+    log_movie(client, movie(4, "Watching"), status="in_progress")
+    assert library_titles(client, sort="status") == ["Watching", "Planned", "Done", "Rated Only"]
+
+
+def test_status_sort_uses_seasons_for_shows_with_no_status(client):
+    log_movie(client, movie(1, "Planned"), status="want")
+    client.put("/library/tv/9/seasons/1", json={**details(BB), "status": "in_progress"})
+    client.put("/library/tv/9/seasons/2", json={**details(BB), "status": "finished"})
+    assert library_titles(client, sort="status") == ["Breaking Bad", "Planned"]
+
+
+def test_sort_library_by_rating_with_unrated_always_last(client):
+    log_movie(client, movie(1, "Middle"), rating=7.5)
+    log_movie(client, movie(2, "Unrated"), status="want")
+    log_movie(client, movie(3, "Zero"), rating=0)
+    log_movie(client, movie(4, "Top"), rating=10)
+
+    assert library_titles(client, sort="rating") == ["Top", "Middle", "Zero", "Unrated"]
+    assert library_titles(client, sort="rating", order="asc") == ["Zero", "Middle", "Top", "Unrated"]
+
+
+def test_sort_library_by_title_ignoring_capitals(client):
+    log_movie(client, movie(1, "banana"), rating=1)
+    log_movie(client, movie(2, "Cherry"), rating=1)
+    log_movie(client, movie(3, "Apple"), rating=1)
+    assert library_titles(client, sort="title") == ["Apple", "banana", "Cherry"]
+
+
+def test_ties_stay_most_recently_changed_first(client):
+    log_movie(client, movie(1, "Older"), rating=8)
+    log_movie(client, movie(2, "Newer"), rating=8)
+    with library_service.get_connection() as connection:
+        connection.execute("UPDATE library_items SET updated_at = '2020-01-01' WHERE tmdb_id = 1")
+    assert library_titles(client, sort="rating") == ["Newer", "Older"]
+
+
+def test_new_sorts_work_with_filters(client):
+    log_movie(client, movie(1, "Low"), status="finished", rating=2)
+    log_movie(client, movie(2, "High"), status="finished", rating=9)
+    log_movie(client, movie(3, "Other"), status="want", rating=10)
+    assert library_titles(client, sort="rating", status="finished") == ["High", "Low"]
