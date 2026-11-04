@@ -1868,7 +1868,7 @@ describe('searching lists', () => {
       expect(screen.getByRole('button', { name: 'Move Dune down' })).toBeInTheDocument();
 
       typeIn('Search this shelf', 'radiohead');
-      expect(screen.getByText('Clear the search to reorder this shelf.')).toBeInTheDocument();
+      expect(screen.getByText(/To reorder this shelf, use Shelf order/)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^Move / })).not.toBeInTheDocument();
       expect(screen.getByText('Airbag').closest('li')).toHaveAttribute('draggable', 'false');
 
@@ -1896,6 +1896,217 @@ describe('searching lists', () => {
       await screen.findByText(/This shelf is empty/);
       expect(screen.queryByLabelText('Search this shelf')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('sorting and filtering a shelf', () => {
+  const entry = (id, name, overrides = {}) =>
+    libraryItem({
+      id,
+      tmdb_id: id,
+      title: name,
+      updated_at: `2026-01-0${id} 00:00:00`,
+      watched_sort_date: null,
+      watched_date: null,
+      season_counts: { want: 0, in_progress: 0, finished: 0 },
+      ...overrides,
+    });
+  const ITEMS = [
+    entry(1, 'Charlie', {
+      status: 'finished',
+      rating: 5,
+      year: '2010',
+      release_date: '2010-05-01',
+      watched_sort_date: '2026-01-01',
+      watched_date: '2026-01-01',
+    }),
+    entry(2, 'Alpha', {
+      status: 'want',
+      rating: null,
+      year: null,
+      release_date: null,
+    }),
+    entry(3, 'Bravo', {
+      status: 'in_progress',
+      rating: 9.5,
+      year: '2024',
+      release_date: '2024-03-01',
+      watched_sort_date: '2026-11-03',
+      media_type: 'album',
+    }),
+    entry(4, 'Delta', {
+      status: 'finished',
+      rating: 0,
+      year: '1990',
+      release_date: null,
+      watched_sort_date: '2020-06-01',
+      watched_date: '2020-06-01',
+      media_type: 'tv',
+    }),
+  ];
+
+  const order = () => [...document.querySelectorAll('.shelf-item .season-name')].map((el) => el.textContent);
+  const choose = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+  async function openShelf(items = ITEMS) {
+    window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+    setRoutes({ shelf: { ...SHELF, items } });
+    render(<App />);
+    await screen.findByText(items[0].title);
+  }
+
+  test('starts in shelf order, with reordering available', async () => {
+    await openShelf();
+    expect(screen.getByLabelText('Sort by')).toHaveValue('shelf');
+    expect(order()).toEqual(['Charlie', 'Alpha', 'Bravo', 'Delta']);
+    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toBeInTheDocument();
+  });
+
+  test.each([
+    ['watched:desc', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
+    ['watched:asc', ['Delta', 'Charlie', 'Bravo', 'Alpha']],
+    ['release:desc', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
+    ['release:asc', ['Delta', 'Charlie', 'Bravo', 'Alpha']],
+    ['status', ['Bravo', 'Alpha', 'Charlie', 'Delta']],
+    ['rating:desc', ['Bravo', 'Charlie', 'Delta', 'Alpha']],
+    ['rating:asc', ['Delta', 'Charlie', 'Bravo', 'Alpha']],
+    ['title', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
+    ['changed:desc', ['Delta', 'Bravo', 'Alpha', 'Charlie']],
+  ])('sorting by %s gives %j', async (option, expected) => {
+    await openShelf();
+    choose('Sort by', option);
+    expect(order()).toEqual(expected);
+  });
+
+  test('going back to Shelf order restores it', async () => {
+    await openShelf();
+    choose('Sort by', 'title');
+    choose('Sort by', 'shelf');
+    expect(order()).toEqual(['Charlie', 'Alpha', 'Bravo', 'Delta']);
+  });
+
+  test('sorting never saves a new order', async () => {
+    await openShelf();
+    choose('Sort by', 'title');
+    choose('Sort by', 'rating:desc');
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['Sort by', 'title'],
+    ['Filter by type', 'album'],
+    ['Filter by status', 'finished'],
+  ])('reordering is off with %s changed', async (label, value) => {
+    await openShelf();
+    choose(label, value);
+
+    expect(screen.queryByRole('button', { name: /^Move / })).not.toBeInTheDocument();
+    expect(screen.getByText(/To reorder this shelf, use Shelf order/)).toBeInTheDocument();
+    expect(document.querySelector('.shelf-item')).toHaveAttribute('draggable', 'false');
+  });
+
+  test('titles keep their shelf numbers when sorted', async () => {
+    await openShelf();
+    choose('Sort by', 'title');
+    const row = screen.getByText('Alpha').closest('li');
+    expect(row.querySelector('.shelf-item-number').textContent).toBe('2');
+  });
+
+  test('sorted titles can still be removed, staying sorted', async () => {
+    await openShelf();
+    axios.delete.mockResolvedValue({ data: { ...SHELF, items: ITEMS.filter((item) => item.id !== 2) } });
+    choose('Sort by', 'title');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Alpha from shelf' }));
+
+    await waitFor(() => expect(order()).toEqual(['Bravo', 'Charlie', 'Delta']));
+    expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/shelves/5/items/2'));
+  });
+
+  test('filters by type', async () => {
+    await openShelf();
+    choose('Filter by type', 'album');
+    expect(order()).toEqual(['Bravo']);
+  });
+
+  test('filters by status', async () => {
+    await openShelf();
+    choose('Filter by status', 'finished');
+    expect(order()).toEqual(['Charlie', 'Delta']);
+  });
+
+  test('a show logged only by season counts under its seasons', async () => {
+    await openShelf([
+      entry(1, 'First', { status: 'want' }),
+      entry(2, 'Season Show', {
+        media_type: 'tv',
+        season_counts: { want: 0, in_progress: 1, finished: 2 },
+      }),
+    ]);
+    choose('Filter by status', 'finished');
+    expect(order()).toEqual(['Season Show']);
+    expect(screen.getByText(/Watching/)).toBeInTheDocument();
+
+    choose('Filter by status', '');
+    choose('Sort by', 'status');
+    expect(order()).toEqual(['Season Show', 'First']);
+  });
+
+  test('filters, sorting and search work together', async () => {
+    await openShelf();
+    choose('Filter by status', 'finished');
+    choose('Sort by', 'title');
+    expect(order()).toEqual(['Charlie', 'Delta']);
+    fireEvent.change(screen.getByLabelText('Search this shelf'), { target: { value: 'del' } });
+    expect(order()).toEqual(['Delta']);
+  });
+
+  test('says when no titles match the filters', async () => {
+    await openShelf();
+    choose('Filter by type', 'song');
+    expect(screen.getByText('Nothing on this shelf matches these filters.')).toBeInTheDocument();
+  });
+
+  test('sorted titles are paged, and sorting returns to the first page', async () => {
+    const many = Array.from({ length: 15 }, (_, i) =>
+      entry(i + 1, `Title ${String(i + 1).padStart(2, '0')}`, { rating: i })
+    );
+    await openShelf(many);
+    fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+
+    choose('Sort by', 'rating:desc');
+
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    expect(order()[0]).toBe('Title 15');
+    expect(order()).toHaveLength(10);
+  });
+
+  test('rows show the date being sorted by', async () => {
+    await openShelf();
+    choose('Sort by', 'watched:desc');
+    expect(screen.getByText('Watched Jan 1, 2026')).toBeInTheDocument();
+    choose('Sort by', 'release:desc');
+    expect(screen.getByText(/Released May 1, 2010/)).toBeInTheDocument();
+  });
+
+  test('sorting by release date fills in missing dates', async () => {
+    await openShelf();
+    axios.get.mockClear();
+    choose('Sort by', 'release:desc');
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/shelves\/5$/), {
+        params: { fill_release_dates: true },
+      })
+    );
+  });
+
+  test('a failed date lookup still sorts', async () => {
+    await openShelf();
+    setRoutes({ shelf: { response: { status: 500, data: {} } } });
+    choose('Sort by', 'release:asc');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(order()[0]).toBe('Delta');
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
   });
 });
 

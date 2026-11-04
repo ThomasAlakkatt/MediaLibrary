@@ -2,10 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import {
   API_URL,
+  MIXED_STATUS_LABELS,
+  effectiveStatuses,
+  formatDate,
   getErrorMessage,
   libraryItemToMedia,
+  logStatusText,
   matchesSearch,
   posterUrl,
+  statusLabels,
   titleMatchesSearch,
 } from './api';
 import ListSearch from './ListSearch';
@@ -13,6 +18,58 @@ import { Clapperboard } from './Loaders';
 import { TYPE_LABELS } from './MediaCard';
 import Pagination, { usePagination } from './Pagination';
 import TitleDetail from './TitleDetail';
+
+const SORT_OPTIONS = [
+  { value: 'shelf', label: 'Shelf order' },
+  { value: 'changed:desc', label: 'Recently changed' },
+  { value: 'watched:desc', label: 'Date finished: newest first' },
+  { value: 'watched:asc', label: 'Date finished: oldest first' },
+  { value: 'release:desc', label: 'Release date: newest first' },
+  { value: 'release:asc', label: 'Release date: oldest first' },
+  { value: 'status', label: 'Status' },
+  { value: 'rating:desc', label: 'Rating: highest first' },
+  { value: 'rating:asc', label: 'Rating: lowest first' },
+  { value: 'title', label: 'Title: A to Z' },
+];
+
+// Compares two dates written as text, like My Library: a title with no date counts as the latest of all.
+function compareDates(a, b, direction) {
+  if (!a && !b) return 0;
+  if (!a) return direction;
+  if (!b) return -direction;
+  return a.localeCompare(b) * direction;
+}
+
+// Compares in the given direction, with no value always last.
+function compareNumbers(a, b, direction) {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return (a - b) * direction;
+}
+
+const STATUS_ORDER = ['in_progress', 'want', 'finished'];
+
+function statusRank(item) {
+  const [status] = effectiveStatuses(item);
+  return status ? STATUS_ORDER.indexOf(status) : STATUS_ORDER.length;
+}
+
+// A sorted copy for viewing. The shelf's saved order isn't changed, and ties stay in shelf order.
+function sortItems(items, sortOption) {
+  const [kind, order] = sortOption.split(':');
+  const direction = order === 'asc' ? 1 : -1;
+  const comparers = {
+    changed: (a, b) => compareDates(a.updated_at, b.updated_at, direction),
+    watched: (a, b) => compareDates(a.watched_sort_date, b.watched_sort_date, direction),
+    release: (a, b) =>
+      compareDates(a.release_date || a.year, b.release_date || b.year, direction),
+    status: (a, b) => statusRank(a) - statusRank(b),
+    rating: (a, b) => compareNumbers(a.rating, b.rating, direction),
+    title: (a, b) => a.title.localeCompare(b.title),
+  };
+  return comparers[kind] ? [...items].sort(comparers[kind]) : items;
+}
 
 function moveItem(items, fromIndex, toIndex) {
   const reordered = [...items];
@@ -31,8 +88,34 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
   const dragIndex = useRef(null);
   const [query, setQuery] = useState('');
   const searching = Boolean(query.trim());
-  const matchingItems = (shelf?.items ?? []).filter((item) => titleMatchesSearch(query, item));
+  const [sortOption, setSortOption] = useState('shelf');
+  const [mediaType, setMediaType] = useState('');
+  const [status, setStatus] = useState('');
+  // Moving titles only makes sense when looking at the whole shelf in its saved order.
+  const canReorder = !searching && sortOption === 'shelf' && !mediaType && !status;
+  const matchingItems = sortItems(
+    (shelf?.items ?? []).filter(
+      (item) =>
+        titleMatchesSearch(query, item) &&
+        (!mediaType || item.media_type === mediaType) &&
+        (!status || effectiveStatuses(item).includes(status))
+    ),
+    sortOption
+  );
   const itemsPage = usePagination(matchingItems);
+  const sortKind = sortOption.split(':')[0];
+
+  function handleSortChange(value) {
+    setSortOption(value);
+    itemsPage.resetPage();
+    // Titles shelved before release dates were stored may only have a year.
+    if (value.startsWith('release')) {
+      axios
+        .get(`${API_URL}/shelves/${shelfId}`, { params: { fill_release_dates: true } })
+        .then((response) => setShelf(response.data))
+        .catch(() => {});
+    }
+  }
 
   // Also reloads when coming back from a title's page, since it may have left this shelf there.
   useEffect(() => {
@@ -180,20 +263,70 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
             </p>
           ) : (
             <>
-            <ListSearch
-              label="Search this shelf"
-              placeholder="Search this shelf by title or artist"
-              value={query}
-              onChange={(value) => {
-                setQuery(value);
-                itemsPage.resetPage();
-              }}
-            />
-            {searching && matchingItems.length > 0 && (
-              <p className="movie-status">Clear the search to reorder this shelf.</p>
+            <div className="shelf-controls">
+              <ListSearch
+                label="Search this shelf"
+                placeholder="Search this shelf by title or artist"
+                value={query}
+                onChange={(value) => {
+                  setQuery(value);
+                  itemsPage.resetPage();
+                }}
+              />
+              <div className="page-filters">
+                <select
+                  aria-label="Sort by"
+                  value={sortOption}
+                  onChange={(event) => handleSortChange(event.target.value)}
+                >
+                  {SORT_OPTIONS.map(({ value, label }) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Filter by type"
+                  value={mediaType}
+                  onChange={(event) => {
+                    setMediaType(event.target.value);
+                    itemsPage.resetPage();
+                  }}
+                >
+                  <option value="">All types</option>
+                  <option value="movie">Movies</option>
+                  <option value="tv">Shows</option>
+                  <option value="album">Albums</option>
+                  <option value="song">Songs</option>
+                </select>
+                <select
+                  aria-label="Filter by status"
+                  value={status}
+                  onChange={(event) => {
+                    setStatus(event.target.value);
+                    itemsPage.resetPage();
+                  }}
+                >
+                  <option value="">Any status</option>
+                  {Object.entries(MIXED_STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {!canReorder && matchingItems.length > 0 && (
+              <p className="movie-status shelf-reorder-note">
+                To reorder this shelf, use Shelf order and clear any search or filters.
+              </p>
             )}
             {matchingItems.length === 0 && (
-              <p className="empty-state-hint page-empty">Nothing on this shelf matches “{query.trim()}”.</p>
+              <p className="empty-state-hint page-empty">
+                {searching
+                  ? `Nothing on this shelf matches “${query.trim()}”.`
+                  : 'Nothing on this shelf matches these filters.'}
+              </p>
             )}
             <ol className="shelf-items">
               {itemsPage.pageItems.map((item) => {
@@ -203,7 +336,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                 <li
                   key={item.id}
                   className={`shelf-item${dropIndex === index ? ' shelf-item--drop-target' : ''}`}
-                  draggable={!searching}
+                  draggable={canReorder}
                   onDragStart={(event) => {
                     dragIndex.current = index;
                     event.dataTransfer.effectAllowed = 'move';
@@ -240,10 +373,23 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                     <span className="season-meta">
                       {[TYPE_LABELS[item.media_type], item.artists, item.year].filter(Boolean).join(' · ')}
                     </span>
+                    {(logStatusText(item) || sortKind === 'watched' || sortKind === 'release') && (
+                      <span className="season-meta">
+                        {sortKind === 'watched' && item.watched_date
+                          ? `${statusLabels(item.media_type).finished} ${formatDate(item.watched_date)}`
+                          : logStatusText(item)}
+                        {sortKind === 'release' && (item.release_date || item.year) && (
+                          <>
+                            {logStatusText(item) && ' · '}
+                            Released {formatDate(item.release_date || item.year)}
+                          </>
+                        )}
+                      </span>
+                    )}
                   </button>
                   {item.rating !== null && <span className="my-rating">★ {item.rating}</span>}
                   <div className="shelf-item-actions">
-                    {!searching && (
+                    {canReorder && (
                       <>
                         <button
                           type="button"

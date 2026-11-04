@@ -311,8 +311,8 @@ def create_shelf(body: ShelfRequest):
 
 
 @app.get("/shelves/{shelf_id}")
-def shelf(shelf_id: int):
-    return library_service.get_shelf(shelf_id)
+def shelf(shelf_id: int, fill_release_dates: bool = False):
+    return library_service.get_shelf(shelf_id, fill_release_dates)
 
 
 @app.patch("/shelves/{shelf_id}")

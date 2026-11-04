@@ -166,6 +166,23 @@ def _load_seasons_by_item(connection):
     return seasons
 
 
+# Adds what's worked out from a title's log and season logs, for showing and sorting it anywhere:
+# season_counts lets a show logged only by season say something useful about itself, watched_date is
+# the date it was really finished, and watched_sort_date counts anything still being watched as today.
+def _add_log_summaries(items, seasons_by_item):
+    today = date.today().isoformat()
+    for item in items:
+        seasons = seasons_by_item.get(item["id"], [])
+        being_watched = _is_being_watched(item, seasons)
+        finished = _finished_date(item, seasons)
+        item["season_counts"] = {
+            season_status: sum(1 for season in seasons if season["status"] == season_status)
+            for season_status in ("want", "in_progress", "finished")
+        }
+        item["watched_date"] = None if being_watched else finished
+        item["watched_sort_date"] = today if being_watched else finished
+
+
 # Both date sorts treat a title with no date as the latest of all. Dates are written YYYY-MM-DD, or
 # just YYYY for a release year, so they compare correctly as text. Python keeps tied items in their
 # existing order, so ties stay most recently changed first.
@@ -208,28 +225,10 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
         seasons_by_item = _load_seasons_by_item(connection)
 
     items = [dict(row) for row in rows]
-
-    # Lets a show logged only by season say something useful about itself.
-    for item in items:
-        seasons = seasons_by_item.get(item["id"], [])
-        item["season_counts"] = {
-            season_status: sum(1 for season in seasons if season["status"] == season_status)
-            for season_status in ("want", "in_progress", "finished")
-        }
+    _add_log_summaries(items, seasons_by_item)
 
     if sort == "watched":
-        today = date.today().isoformat()
-
-        def watched_sort_date(item):
-            seasons = seasons_by_item.get(item["id"], [])
-            # Something still being watched counts as watched today.
-            return today if _is_being_watched(item, seasons) else _finished_date(item, seasons)
-
-        for item in items:
-            seasons = seasons_by_item.get(item["id"], [])
-            being_watched = _is_being_watched(item, seasons)
-            item["watched_date"] = None if being_watched else _finished_date(item, seasons)
-        return _sort_by_date(items, watched_sort_date, order)
+        return _sort_by_date(items, lambda item: item["watched_sort_date"], order)
 
     if sort == "release":
         return _sort_by_date(items, lambda item: item["release_date"] or item["year"], order)
@@ -343,7 +342,7 @@ def _require_shelf(connection, shelf_id):
 
 
 def _shelf_items(connection, shelf_id):
-    return [
+    items = [
         dict(row)
         for row in connection.execute(
             """
@@ -355,6 +354,8 @@ def _shelf_items(connection, shelf_id):
             (shelf_id,),
         )
     ]
+    _add_log_summaries(items, _load_seasons_by_item(connection))
+    return items
 
 
 def list_shelves():
@@ -382,7 +383,11 @@ def create_shelf(name, description=None):
         raise DuplicateShelfName() from e
 
 
-def get_shelf(shelf_id):
+# fill_release_dates looks up any that are missing first, for sorting a shelf by release date.
+def get_shelf(shelf_id, fill_release_dates=False):
+    if fill_release_dates:
+        _fill_missing_release_dates()
+
     with get_connection() as connection:
         shelf = _require_shelf(connection, shelf_id)
         shelf["items"] = _shelf_items(connection, shelf_id)

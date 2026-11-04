@@ -107,6 +107,12 @@ export function titleMatchesSearch(query, item) {
   return matchesSearch(query, [item.title, item.artists, item.album_title]);
 }
 
+// The statuses a title counts as having: its own, or those of its seasons if it has none.
+export function effectiveStatuses(log) {
+  if (log.status) return [log.status];
+  return ['in_progress', 'want', 'finished'].filter((status) => log.season_counts?.[status] > 0);
+}
+
 export function isMusic(mediaType) {
   return mediaType === 'album' || mediaType === 'song';
 }

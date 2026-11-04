@@ -812,3 +812,56 @@ def test_upgrade_to_music_keeps_a_copy_of_the_old_file(old_database):
     backup = sqlite3.connect(f"{old_database}-before-music-logging")
     assert backup.execute("SELECT title FROM library_items").fetchone()[0] == "Breaking Bad"
     backup.close()
+
+
+def test_shelf_items_include_what_sorting_needs(client, fixed_today):
+    shelf_id = make_shelf(client)
+    add(client, shelf_id, DUNE)
+    add(client, shelf_id, BB)
+    add(client, shelf_id, HEAT)
+    save_log(client, DUNE, status="finished", finished_on="2026-01-01")
+    save_log(client, HEAT, status="in_progress")
+    client.put("/library/tv/2/seasons/1", json={**details(BB), "status": "in_progress"})
+
+    items = {i["title"]: i for i in client.get(f"/shelves/{shelf_id}").json()["items"]}
+
+    assert items["Dune"]["watched_date"] == "2026-01-01"
+    assert items["Dune"]["watched_sort_date"] == "2026-01-01"
+    assert items["Heat"]["watched_date"] is None
+    assert items["Heat"]["watched_sort_date"] == "2026-11-03"
+    assert items["Breaking Bad"]["watched_sort_date"] == "2026-11-03"
+    assert items["Breaking Bad"]["season_counts"]["in_progress"] == 1
+
+
+def test_an_unlogged_shelf_item_has_no_dates(client):
+    shelf_id = make_shelf(client)
+    add(client, shelf_id, DUNE)
+    item = client.get(f"/shelves/{shelf_id}").json()["items"][0]
+    assert (item["watched_date"], item["watched_sort_date"]) == (None, None)
+
+
+def test_shelf_only_looks_up_release_dates_when_asked(client, monkeypatch):
+    looked_up = []
+
+    def fake_lookup(media_type, tmdb_id):
+        looked_up.append(tmdb_id)
+        return "2021-09-15"
+
+    monkeypatch.setattr(library_service, "get_release_date", fake_lookup)
+    shelf_id = make_shelf(client)
+    add(client, shelf_id, DUNE)
+
+    assert client.get(f"/shelves/{shelf_id}").json()["items"][0]["release_date"] is None
+    assert looked_up == []
+
+    filled = client.get(f"/shelves/{shelf_id}", params={"fill_release_dates": True}).json()
+    assert filled["items"][0]["release_date"] == "2021-09-15"
+    assert looked_up == [1]
+
+
+def test_saved_shelf_order_is_unaffected_by_the_summaries(client):
+    shelf_id = make_shelf(client)
+    ids = [add(client, shelf_id, t).json()["items"][-1]["id"] for t in (DUNE, BB, HEAT)]
+    response = client.put(f"/shelves/{shelf_id}/order", json={"item_ids": ids[::-1]})
+    assert titles(response.json()) == ["Heat", "Breaking Bad", "Dune"]
+    assert [i["position"] for i in response.json()["items"]] == [0, 1, 2]
