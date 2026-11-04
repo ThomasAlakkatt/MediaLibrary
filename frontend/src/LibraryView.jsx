@@ -11,6 +11,7 @@ import {
 } from './api';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
+import Pagination, { usePagination } from './Pagination';
 import TitleDetail from './TitleDetail';
 
 const SORT_OPTIONS = [
@@ -28,6 +29,7 @@ export default function LibraryView() {
   const [status, setStatus] = useState('');
   const [sortOption, setSortOption] = useState('changed:desc');
   const [selected, setSelected] = useState(null);
+  const pagination = usePagination(items ?? []);
 
   // Also reloads when coming back from a title's page, since its log may have changed there.
   useEffect(() => {
@@ -78,7 +80,10 @@ export default function LibraryView() {
           <select
             aria-label="Sort by"
             value={sortOption}
-            onChange={(event) => setSortOption(event.target.value)}
+            onChange={(event) => {
+              setSortOption(event.target.value);
+              pagination.resetPage();
+            }}
           >
             {SORT_OPTIONS.map(({ value, label }) => (
               <option key={value} value={value}>
@@ -89,7 +94,10 @@ export default function LibraryView() {
           <select
             aria-label="Filter by type"
             value={mediaType}
-            onChange={(event) => setMediaType(event.target.value)}
+            onChange={(event) => {
+              setMediaType(event.target.value);
+              pagination.resetPage();
+            }}
           >
             <option value="">All types</option>
             <option value="movie">Movies</option>
@@ -100,7 +108,10 @@ export default function LibraryView() {
           <select
             aria-label="Filter by status"
             value={status}
-            onChange={(event) => setStatus(event.target.value)}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              pagination.resetPage();
+            }}
           >
             <option value="">Any status</option>
             {Object.entries(MIXED_STATUS_LABELS).map(([value, label]) => (
@@ -123,7 +134,7 @@ export default function LibraryView() {
       )}
       {items?.length > 0 && (
         <div className="results">
-          {items.map((item) => (
+          {pagination.pageItems.map((item) => (
             <MediaCard
               key={item.id}
               item={item}
@@ -144,6 +155,11 @@ export default function LibraryView() {
           ))}
         </div>
       )}
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        onPageChange={pagination.goToPage}
+      />
     </section>
   );
 }

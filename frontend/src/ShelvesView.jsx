@@ -3,6 +3,7 @@ import axios from 'axios';
 import { API_URL, getErrorMessage, libraryItemToMedia, posterUrl } from './api';
 import { Clapperboard } from './Loaders';
 import { TYPE_LABELS } from './MediaCard';
+import Pagination, { usePagination } from './Pagination';
 import TitleDetail from './TitleDetail';
 
 function moveItem(items, fromIndex, toIndex) {
@@ -20,6 +21,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dropIndex, setDropIndex] = useState(null);
   const dragIndex = useRef(null);
+  const itemsPage = usePagination(shelf?.items ?? []);
 
   // Also reloads when coming back from a title's page, since it may have left this shelf there.
   useEffect(() => {
@@ -42,6 +44,8 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
     const items = moveItem(shelf.items, fromIndex, toIndex);
     // Moves right away so reordering feels instant, and moves back if saving fails.
     setShelf({ ...shelf, items });
+    // Stays with the title if the move carries it onto another page.
+    itemsPage.showIndex(toIndex);
     setError(null);
     try {
       const response = await axios.put(`${API_URL}/shelves/${shelfId}/order`, {
@@ -50,6 +54,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
       setShelf(response.data);
     } catch (err) {
       setShelf(previous);
+      itemsPage.showIndex(fromIndex);
       setError(getErrorMessage(err, 'Something went wrong saving the new order.'));
     }
   }
@@ -164,7 +169,9 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
             </p>
           ) : (
             <ol className="shelf-items">
-              {shelf.items.map((item, index) => (
+              {itemsPage.pageItems.map((item, pageIndex) => {
+                const index = itemsPage.startIndex + pageIndex;
+                return (
                 <li
                   key={item.id}
                   className={`shelf-item${dropIndex === index ? ' shelf-item--drop-target' : ''}`}
@@ -236,9 +243,15 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                     </button>
                   </div>
                 </li>
-              ))}
+              );
+              })}
             </ol>
           )}
+          <Pagination
+            page={itemsPage.page}
+            totalPages={itemsPage.totalPages}
+            onPageChange={itemsPage.goToPage}
+          />
         </>
       )}
     </section>
@@ -249,6 +262,7 @@ function ShelfList({ onOpenShelf }) {
   const [shelves, setShelves] = useState(null);
   const [name, setName] = useState('');
   const [error, setError] = useState(null);
+  const shelvesPage = usePagination(shelves ?? []);
 
   useEffect(() => {
     let current = true;
@@ -308,7 +322,7 @@ function ShelfList({ onOpenShelf }) {
       )}
       {shelves?.length > 0 && (
         <div className="results">
-          {shelves.map((shelf) => (
+          {shelvesPage.pageItems.map((shelf) => (
             <button
               type="button"
               className="shelf-card"
@@ -330,6 +344,11 @@ function ShelfList({ onOpenShelf }) {
           ))}
         </div>
       )}
+      <Pagination
+        page={shelvesPage.page}
+        totalPages={shelvesPage.totalPages}
+        onPageChange={shelvesPage.goToPage}
+      />
     </section>
   );
 }

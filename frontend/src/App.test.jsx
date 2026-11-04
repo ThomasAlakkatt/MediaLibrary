@@ -1468,6 +1468,238 @@ describe('album pages', () => {
   });
 });
 
+describe('pagination', () => {
+  const manyItems = (count) =>
+    Array.from({ length: count }, (_, index) =>
+      libraryItem({ id: index + 1, tmdb_id: index + 1, title: `Title ${index + 1}` })
+    );
+  const manyShelves = (count) =>
+    Array.from({ length: count }, (_, index) => ({ ...SHELF, id: index + 1, name: `Shelf ${index + 1}` }));
+  const next = () => fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+  const previous = () => fireEvent.click(screen.getByRole('button', { name: '← Previous' }));
+
+  describe('My Library', () => {
+    test('exactly one page of titles has no paging', async () => {
+      setRoutes({ library: manyItems(10) });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByText('Title 10');
+      expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument();
+    });
+
+    test('shows 10 titles a page and moves between pages', async () => {
+      setRoutes({ library: manyItems(25) });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByText('Title 1');
+      expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+      expect(screen.getByText('Title 10')).toBeInTheDocument();
+      expect(screen.queryByText('Title 11')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '← Previous' })).toBeDisabled();
+
+      next();
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+      expect(screen.getByText('Title 11')).toBeInTheDocument();
+      expect(screen.queryByText('Title 1')).not.toBeInTheDocument();
+
+      next();
+      expect(screen.getByText('Title 25')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Next →' })).toBeDisabled();
+
+      previous();
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    });
+
+    test.each([
+      ['Sort by', 'watched:desc'],
+      ['Filter by type', 'album'],
+      ['Filter by status', 'finished'],
+    ])('changing %s goes back to the first page', async (label, value) => {
+      setRoutes({ library: manyItems(25) });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByText('Title 1');
+      next();
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+      expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    });
+
+    test('coming back from a title stays on the same page', async () => {
+      setRoutes({ library: manyItems(25), item: libraryItem() });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByText('Title 1');
+      next();
+      fireEvent.click(screen.getByText('Title 11'));
+      await screen.findByLabelText('My rating');
+
+      fireEvent.click(screen.getByRole('button', { name: '← Back to My Library' }));
+
+      expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+      expect(screen.getByText('Title 11')).toBeInTheDocument();
+    });
+
+    test('a filter that shrinks the list falls back to a page that exists', async () => {
+      setRoutes({ library: manyItems(25) });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByText('Title 1');
+      next();
+      next();
+      fireEvent.click(screen.getByText('Title 25'));
+      setRoutes({ item: libraryItem({ rating: 1 }), library: manyItems(5) });
+      await screen.findByLabelText('My rating');
+      fireEvent.click(screen.getByRole('button', { name: '← Back to My Library' }));
+
+      expect(await screen.findByText('Title 5')).toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument();
+    });
+
+    test('moving between pages returns to the top', async () => {
+      const scrollTo = vi.fn();
+      window.scrollTo = scrollTo;
+      setRoutes({ library: manyItems(25) });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByText('Title 1');
+      scrollTo.mockClear();
+      next();
+      expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    });
+  });
+
+  describe('Shelves', () => {
+    test('shows 10 shelves a page', async () => {
+      setRoutes({ shelves: manyShelves(15) });
+      render(<App />);
+      goTo('Shelves');
+      await screen.findByText('Shelf 1');
+      expect(screen.getByText('Shelf 10')).toBeInTheDocument();
+      expect(screen.queryByText('Shelf 11')).not.toBeInTheDocument();
+      next();
+      expect(screen.getByText('Shelf 15')).toBeInTheDocument();
+    });
+
+    test('a few shelves have no paging', async () => {
+      setRoutes({ shelves: manyShelves(3) });
+      render(<App />);
+      goTo('Shelves');
+      await screen.findByText('Shelf 3');
+      expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('inside a shelf', () => {
+    function openLongShelf(count = 15) {
+      window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+      setRoutes({ shelf: { ...SHELF, items: manyItems(count) } });
+      render(<App />);
+      return screen.findByText('Title 1');
+    }
+
+    function rowNumbers() {
+      return [...document.querySelectorAll('.shelf-item-number')].map((el) => el.textContent);
+    }
+
+    test('shows 10 titles a page, numbered across pages', async () => {
+      await openLongShelf();
+      expect(screen.queryByText('Title 11')).not.toBeInTheDocument();
+      expect(rowNumbers().slice(0, 2)).toEqual(['1', '2']);
+      next();
+      expect(screen.getByText('Title 11')).toBeInTheDocument();
+      expect(rowNumbers()[0]).toBe('11');
+    });
+
+    test('reordering on a later page keeps the whole shelf in order', async () => {
+      axios.put.mockImplementation((url, body) =>
+        Promise.resolve({
+          data: {
+            ...SHELF,
+            items: body.item_ids.map((id) => manyItems(15).find((item) => item.id === id)),
+          },
+        })
+      );
+      await openLongShelf();
+      next();
+      fireEvent.click(screen.getByRole('button', { name: 'Move Title 12 down' }));
+
+      await waitFor(() => expect(axios.put).toHaveBeenCalled());
+      const ids = axios.put.mock.calls[0][1].item_ids;
+      expect(ids).toHaveLength(15);
+      expect(ids.slice(10, 13)).toEqual([11, 13, 12]);
+    });
+
+    test('moving a title across a page edge follows it', async () => {
+      axios.put.mockImplementation((url, body) =>
+        Promise.resolve({
+          data: {
+            ...SHELF,
+            items: body.item_ids.map((id) => manyItems(15).find((item) => item.id === id)),
+          },
+        })
+      );
+      await openLongShelf();
+      fireEvent.click(screen.getByRole('button', { name: 'Move Title 10 down' }));
+
+      expect(await screen.findByText('Page 2 of 2')).toBeInTheDocument();
+      expect(rowNumbers()[0]).toBe('11');
+      expect(document.querySelector('.shelf-item .season-name').textContent).toBe('Title 10');
+    });
+
+    test('the very first and last titles still cannot move further', async () => {
+      await openLongShelf();
+      expect(screen.getByRole('button', { name: 'Move Title 1 up' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Move Title 10 down' })).toBeEnabled();
+      next();
+      expect(screen.getByRole('button', { name: 'Move Title 11 up' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Move Title 15 down' })).toBeDisabled();
+    });
+
+    test('dragging on a later page uses the right positions', async () => {
+      axios.put.mockImplementation((url, body) =>
+        Promise.resolve({
+          data: {
+            ...SHELF,
+            items: body.item_ids.map((id) => manyItems(15).find((item) => item.id === id)),
+          },
+        })
+      );
+      await openLongShelf();
+      next();
+      const rows = document.querySelectorAll('.shelf-item');
+      fireEvent.dragStart(rows[2], { dataTransfer: { effectAllowed: '' } });
+      fireEvent.dragOver(rows[0]);
+      fireEvent.drop(rows[0]);
+
+      await waitFor(() => expect(axios.put).toHaveBeenCalled());
+      expect(axios.put.mock.calls[0][1].item_ids.slice(10, 13)).toEqual([13, 11, 12]);
+    });
+
+    test('removing the only title on the last page goes back a page', async () => {
+      await openLongShelf(11);
+      next();
+      axios.delete.mockResolvedValue({ data: { ...SHELF, items: manyItems(10) } });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Title 11 from shelf' }));
+
+      expect(await screen.findByText('Title 10')).toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument();
+    });
+  });
+
+  test('search result marks still see the whole library', async () => {
+    setRoutes({
+      search: searchResponse([{ ...DUNE, id: 45, title: 'Late Title' }]),
+      library: manyItems(45).map((item) => ({ ...item, status: 'finished' })),
+    });
+    render(<App />);
+    search('late');
+    expect(await screen.findByText('✓ Watched')).toBeInTheDocument();
+  });
+});
+
 test('My Library lists logged titles with my rating', async () => {
   setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
   render(<App />);
