@@ -522,6 +522,10 @@ test('reopening a show after a failed lookup tries again', async () => {
 
 test.each([
   ['0.00', 0],
+  ['7.500', 7.5],
+  ['7.330', 7.33],
+  ['10.000', 10],
+  ['.2500', 0.25],
   ['10.00', 10],
   ['7.3', 7.3],
   ['7.25', 7.25],
@@ -545,7 +549,7 @@ test.each([
   expect(axios.put.mock.calls[0][1].rating).toBe(saved);
 });
 
-test.each(['-0.01', '11', '10.1', '10.01', '-1', 'great', '8/10', '1e1', '.', '7.333', '.125', '7.500'])(
+test.each(['-0.01', '11', '10.1', '10.01', '-1', 'great', '8/10', '1e1', '.', '7.333', '7.3301', '.125', '10.001'])(
   'the rating %j is rejected without saving',
   async (typed) => {
     await openFromSearch(DUNE);

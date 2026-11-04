@@ -49,7 +49,8 @@ export const INVALID_RATING_MESSAGE =
 export function parseRating(text) {
   const trimmed = text.trim();
   if (!trimmed) return null;
-  if (!/^(\d+(\.\d{0,2})?|\.\d{1,2})$/.test(trimmed)) return undefined;
+  // Extra zeros don't change the number, so 7.500 is fine but 7.501 isn't.
+  if (!/^(\d+(\.\d{0,2}0*)?|\.\d{1,2}0*)$/.test(trimmed)) return undefined;
   const rating = Number(trimmed);
   return rating >= 0 && rating <= 10 ? rating : undefined;
 }
