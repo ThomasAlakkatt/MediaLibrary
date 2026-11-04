@@ -1,4 +1,6 @@
+import re
 import sqlite3
+import unicodedata
 from datetime import date
 
 from database import get_connection
@@ -194,6 +196,15 @@ def _sort_by_date(items, date_of, order):
     return sorted(items, key=sort_key, reverse=order == "desc")
 
 
+# Orders titles the way people read them: numbers by value, so Rocky 2 comes before Rocky 10, ignoring
+# capitals and accents. Splitting on numbers always leaves them at the odd positions.
+def _title_sort_key(item):
+    decomposed = unicodedata.normalize("NFKD", item["title"])
+    text = "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+    parts = re.split(r"(\d+)", text)
+    return [int(part) if index % 2 else part for index, part in enumerate(parts)]
+
+
 # In progress comes first, then not started, then finished, then no status at all. A show
 # logged only by season goes by its seasons.
 def _status_rank(item):
@@ -258,7 +269,7 @@ def list_library(media_type=None, status=None, sort="changed", order="desc"):
         )
 
     if sort == "title":
-        return sorted(items, key=lambda item: item["title"].casefold())
+        return sorted(items, key=_title_sort_key)
 
     return items if order == "desc" else items[::-1]
 

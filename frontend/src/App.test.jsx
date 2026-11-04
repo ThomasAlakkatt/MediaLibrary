@@ -1986,6 +1986,13 @@ describe('sorting and filtering a shelf', () => {
     expect(order()).toEqual(expected);
   });
 
+  test('title order reads numbers by value', async () => {
+    const names = ['Rocky 10', 'rocky 2', 'Rocky', '1917', '300', 'Élan', 'Echo'];
+    await openShelf(names.map((name, index) => entry(index + 1, name)));
+    choose('Sort by', 'title');
+    expect(order()).toEqual(['300', '1917', 'Echo', 'Élan', 'Rocky', 'rocky 2', 'Rocky 10']);
+  });
+
   test('going back to Shelf order restores it', async () => {
     await openShelf();
     choose('Sort by', 'title');

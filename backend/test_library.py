@@ -899,6 +899,27 @@ def test_sort_library_by_title_ignoring_capitals(client):
     assert library_titles(client, sort="title") == ["Apple", "banana", "Cherry"]
 
 
+def test_title_sort_reads_numbers_by_value(client):
+    for index, name in enumerate(["Rocky 10", "rocky 2", "Rocky", "1917", "300", "Rocky 2 Extended", "Élan", "Echo"]):
+        log_movie(client, movie(index + 1, name), rating=1)
+    assert library_titles(client, sort="title") == [
+        "300",
+        "1917",
+        "Echo",
+        "Élan",
+        "Rocky",
+        "rocky 2",
+        "Rocky 2 Extended",
+        "Rocky 10",
+    ]
+
+
+def test_title_sort_handles_unusual_digits(client):
+    log_movie(client, movie(1, "Alien³"), rating=1)
+    log_movie(client, movie(2, "Alien"), rating=1)
+    assert client.get("/library", params={"sort": "title"}).status_code == 200
+
+
 def test_ties_stay_most_recently_changed_first(client):
     log_movie(client, movie(1, "Older"), rating=8)
     log_movie(client, movie(2, "Newer"), rating=8)

@@ -66,7 +66,8 @@ function sortItems(items, sortOption) {
       compareDates(a.release_date || a.year, b.release_date || b.year, direction),
     status: (a, b) => statusRank(a) - statusRank(b),
     rating: (a, b) => compareNumbers(a.rating, b.rating, direction),
-    title: (a, b) => a.title.localeCompare(b.title),
+    // Reads numbers by value, so Rocky 2 comes before Rocky 10, ignoring capitals and accents.
+    title: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }),
   };
   return comparers[kind] ? [...items].sort(comparers[kind]) : items;
 }
