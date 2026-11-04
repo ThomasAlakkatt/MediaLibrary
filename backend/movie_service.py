@@ -28,6 +28,8 @@ CANDIDATE_PAGES = 5
 ALLOWED_CERTIFICATIONS = {"G", "PG", "PG-13"}
 
 
+# Raises TMDBUnavailable if the certification can't be checked, so that isn't mistaken for a movie
+# that failed the check.
 def _has_allowed_certification(movie_id):
     try:
         response = requests.get(
@@ -39,11 +41,11 @@ def _has_allowed_certification(movie_id):
             timeout=10,
         )
         response.raise_for_status()
-    except requests.exceptions.RequestException as e:
+        data = response.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
         print(f"TMDB API Error checking certification for movie {movie_id}: {e}")
-        return False
+        raise TMDBUnavailable() from e
 
-    data = response.json()
     for country_entry in data.get("results", []):
         if country_entry.get("iso_3166_1") != "US":
             continue
@@ -138,6 +140,7 @@ def get_movies_by_genres(discogs_genres, discogs_styles=None, number_of_results=
 
     movie_list = []
     seen_ids = set()
+    check_failed = False
     for batch in candidate_batches:
         for movie in batch:
             if len(movie_list) >= number_of_results:
@@ -147,7 +150,12 @@ def get_movies_by_genres(discogs_genres, discogs_styles=None, number_of_results=
             if movie_id in seen_ids:
                 continue
 
-            if not _has_allowed_certification(movie_id):
+            try:
+                if not _has_allowed_certification(movie_id):
+                    continue
+            except TMDBUnavailable:
+                # One failed check shouldn't lose the rest of the recommendations.
+                check_failed = True
                 continue
 
             seen_ids.add(movie_id)
@@ -172,5 +180,9 @@ def get_movies_by_genres(discogs_genres, discogs_styles=None, number_of_results=
 
         if len(movie_list) >= number_of_results:
             break
+
+    # Nothing found only means "no recommendations" if the movies could actually be checked.
+    if check_failed and not movie_list:
+        raise TMDBUnavailable()
 
     return movie_list
