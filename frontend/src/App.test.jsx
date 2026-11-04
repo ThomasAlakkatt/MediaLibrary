@@ -153,6 +153,19 @@ test('music comes first when it clearly matches the search', async () => {
   expect(headings.indexOf('Music')).toBeLessThan(headings.indexOf('Movies & Shows'));
 });
 
+test('music naming the artist and title also comes first', async () => {
+  setRoutes({
+    search: searchResponse([{ ...DUNE, title: 'A Film' }]),
+    musicText: [{ ...OK_COMPUTER, match: 'artist_and_title' }],
+  });
+  render(<App />);
+  search('radiohead ok computer');
+  await screen.findByText('OK Computer');
+
+  const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+  expect(headings.indexOf('Music')).toBeLessThan(headings.indexOf('Movies & Shows'));
+});
+
 test('a movie with the exact title stays ahead of matching music', async () => {
   setRoutes({
     search: searchResponse([DUNE]),

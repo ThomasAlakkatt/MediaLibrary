@@ -172,7 +172,8 @@ def _artist_keys(artist):
     return keys
 
 
-# Lower is better: the artist, then the exact title, then a title containing the search, then the rest.
+# Lower is better: both the artist and title, then the artist, then the exact title, then a title
+# containing the search, then the rest.
 # Discogs tells different artists with the same name apart with a number, like "Dune (3)". The number is
 # removed from the name for display, so it's kept separately to stop their releases being mixed together.
 def _artist_number(full_title):
@@ -198,15 +199,23 @@ def _same_name_artist_order(releases):
 def _match_rank(release, query_key, artist_query_key):
     if not query_key:
         return 3
+    title_key = _match_key(release["title"])
+    # A search naming both, like "radiohead ok computer", in either order.
+    for artist in release["artists"]:
+        for artist_key in _artist_keys(artist):
+            if title_key and artist_key and artist_query_key in (
+                artist_key + title_key,
+                title_key + artist_key,
+            ):
+                return -1
     if any(artist_query_key in _artist_keys(artist) for artist in release["artists"]):
         return 0
-    title_key = _match_key(release["title"])
     if title_key == query_key:
         return 1
     return 2 if query_key in title_key else 3
 
 
-MATCH_LABELS = {0: "artist", 1: "title"}
+MATCH_LABELS = {-1: "artist_and_title", 0: "artist", 1: "title"}
 
 
 def _rank_candidates(query, candidates):
@@ -227,9 +236,9 @@ def _rank_candidates(query, candidates):
     def best_popularity(rank):
         return max((r["popularity"] for entry_rank, r in ranked if entry_rank == rank), default=0)
 
-    group_order = {0: 0, 1: 1, 2: 2, 3: 3}
+    group_order = {-1: -1, 0: 0, 1: 1, 2: 2, 3: 3}
     if best_popularity(1) > best_popularity(0):
-        group_order = {0: 1, 1: 0, 2: 2, 3: 3}
+        group_order = {-1: -1, 0: 1, 1: 0, 2: 2, 3: 3}
 
     # Within a matching group, the release the most people own comes first. Results that don't match
     # stay in the order Discogs gave them (sorted() keeps ties in their original order).

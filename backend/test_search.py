@@ -340,3 +340,36 @@ def test_one_artists_spellings_are_not_split_up(client, monkeypatch):
     )
     response = artist_search(client, artist="beatles")
     assert [item["title"] for item in response.json()] == ["Abbey Road", "Live", "Single"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["radiohead ok computer", "ok computer radiohead", "RADIOHEAD OK COMPUTER", "the radiohead ok computer"],
+)
+def test_a_search_naming_the_artist_and_title_is_a_clear_match(client, monkeypatch, query):
+    fake_discogs(
+        monkeypatch,
+        results={
+            "general": [
+                release(1, "The Section - Strung Out On OK Computer", have=99999),
+                release(2, "Radiohead - OK Computer", have=285572),
+                release(3, "Radiohead - Airbag", have=7000),
+            ]
+        },
+    )
+    response = client.get("/search/music", params={"query": query}).json()
+    assert response[0]["title"] == "OK Computer"
+    assert response[0]["match"] == "artist_and_title"
+    assert [item["match"] for item in response[1:]] == [None, None]
+
+
+def test_artist_and_title_handles_the_and_translated_names(client, monkeypatch):
+    fake_discogs(monkeypatch, results={"general": [release(1, "The Beatles = ビートルズ* - Abbey Road")]})
+    response = client.get("/search/music", params={"query": "beatles abbey road"}).json()
+    assert response[0]["match"] == "artist_and_title"
+
+
+def test_part_of_a_title_with_the_artist_is_not_a_clear_match(client, monkeypatch):
+    fake_discogs(monkeypatch, results={"general": [release(1, "Radiohead - OK Computer")]})
+    response = client.get("/search/music", params={"query": "radiohead computer"}).json()
+    assert response[0]["match"] is None
