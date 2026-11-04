@@ -299,6 +299,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                   <option value="tv">Shows</option>
                   <option value="album">Albums</option>
                   <option value="song">Songs</option>
+                  <option value="book">Books</option>
                 </select>
                 <select
                   aria-label="Filter by status"
@@ -509,7 +510,7 @@ function ShelfList({ onOpenShelf }) {
       {shelves === null && <Clapperboard label="Loading shelves…" />}
       {shelves?.length === 0 && !error && (
         <p className="empty-state-hint page-empty">
-          No shelves yet. Create one to mix movies, shows and music, like a playlist.
+          No shelves yet. Create one to mix movies, shows, music and books, like a playlist.
         </p>
       )}
       {shelves?.length > 0 && matchingShelves.length === 0 && (

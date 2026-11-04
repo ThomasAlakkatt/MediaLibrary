@@ -15,6 +15,7 @@ from music_service import (
     get_album,
     search_music_text,
 )
+from book_service import BookNotFound, BooksUnavailable, get_book_details, search_books
 from database import init_db
 import library_service
 from library_service import (
@@ -100,6 +101,19 @@ def invalid_shelf_order(request, exc):
     )
 
 
+@app.exception_handler(BooksUnavailable)
+def books_unavailable(request, exc):
+    return JSONResponse(
+        status_code=502,
+        content={"detail": "Could not reach Open Library, please try again."},
+    )
+
+
+@app.exception_handler(BookNotFound)
+def book_not_found(request, exc):
+    return JSONResponse(status_code=404, content={"detail": "Could not find that book."})
+
+
 @app.exception_handler(ShowNotFound)
 def show_not_found(request, exc):
     return JSONResponse(status_code=404, content={"detail": "Could not find that show."})
@@ -116,8 +130,8 @@ def _blank_to_none(text):
 
 
 # A song is identified differently from everything else, so it has routes of its own.
-LoggableType = Literal["movie", "tv", "album"]
-MediaType = Literal["movie", "tv", "album", "song"]
+LoggableType = Literal["movie", "tv", "album", "book"]
+MediaType = Literal["movie", "tv", "album", "song", "book"]
 Status = Literal["want", "in_progress", "finished"]
 Rating = Annotated[Optional[float], AfterValidator(_validate_rating)]
 OptionalText = Annotated[Optional[str], AfterValidator(_blank_to_none)]
@@ -199,6 +213,20 @@ def search_music(query: str, page: int = Query(1, ge=1)):
     if not query.strip():
         raise HTTPException(status_code=400, detail="Please enter a title to search for.")
     return search_music_text(query, number_of_results=10, page_number=page)
+
+
+# Searches books by title or author.
+@app.get("/search/books")
+def search_for_books(query: str, page: int = Query(1, ge=1)):
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Please enter a title to search for.")
+    return search_books(query, page)
+
+
+# A book's details that search results don't include, like its description.
+@app.get("/books/{book_id}")
+def book_details(book_id: int):
+    return get_book_details(book_id)
 
 
 # Searches movies and shows by title. TMDB doesn't serve pages past 500.

@@ -121,6 +121,8 @@ beforeEach(() => {
     shelf: null,
     music: [],
     musicText: [],
+    bookSearch: searchResponse([]),
+    book: { id: 27482, description: 'A tale of adventure.', subjects: ['Fantasy', 'Dragons'] },
     album: ALBUM,
     albumItem: NOT_FOUND,
     albumSongs: [],
@@ -128,11 +130,13 @@ beforeEach(() => {
   axios.get.mockImplementation((url) => {
     if (url.includes('/search/media')) return respond(routes.search);
     if (url.endsWith('/search/music')) return respond(routes.musicText);
+    if (url.endsWith('/search/books')) return respond(routes.bookSearch);
+    if (/\/books\/\d+$/.test(url)) return respond(routes.book);
     if (url.includes('/albums/')) return respond(routes.album);
     if (url.includes('/shows/')) return respond(routes.show);
     if (/\/library\/album\/\d+\/songs$/.test(url)) return respond(routes.albumSongs);
     if (/\/library\/album\//.test(url)) return respond(routes.albumItem);
-    if (/\/library\/(movie|tv|song)\//.test(url)) return respond(routes.item);
+    if (/\/library\/(movie|tv|song|book)\//.test(url)) return respond(routes.item);
     if (url.endsWith('/library')) return respond(routes.library);
     if (/\/shelves\/\d+$/.test(url)) return respond(routes.shelf);
     if (url.endsWith('/shelves')) return respond(routes.shelves);
@@ -316,7 +320,7 @@ test('the Music tab still goes back to its own results', async () => {
 
 test('the search box is labeled for everything it searches', async () => {
   render(<App />);
-  expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies, shows and music');
+  expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies, shows, music and books');
   expect(screen.queryByText('Title', { selector: 'label' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: 'Movies' }));
   expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search movies');
@@ -2193,6 +2197,281 @@ describe('sorting and filtering a shelf', () => {
     await new Promise((resolve) => setTimeout(resolve));
     expect(order()[0]).toBe('Delta');
     expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+  });
+});
+
+describe('books', () => {
+  const HOBBIT = {
+    id: 27482,
+    media_type: 'book',
+    title: 'The Hobbit',
+    creators: 'J.R.R. Tolkien',
+    year: '1937',
+    release_date: null,
+    poster_path: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+    overview: null,
+  };
+  const bookItem = (overrides = {}) =>
+    libraryItem({ id: 80, source_id: 27482, media_type: 'book', title: 'The Hobbit', creators: 'J.R.R. Tolkien', ...overrides });
+  const FILM = { ...DUNE, id: 2, title: 'A Film' };
+
+  function headings() {
+    return screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+  }
+
+  async function openBook() {
+    setRoutes({ bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Books' }));
+    search('hobbit');
+    fireEvent.click(await screen.findByText('The Hobbit'));
+    return screen.findByLabelText('Status');
+  }
+
+  test('the Books filter searches only books', async () => {
+    setRoutes({ bookSearch: searchResponse([HOBBIT], 1, 3), search: searchResponse([FILM]) });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Books' }));
+    expect(screen.getByLabelText('Search')).toHaveAttribute('placeholder', 'Search books');
+    search('hobbit');
+
+    expect(await screen.findByText('The Hobbit')).toBeInTheDocument();
+    expect(screen.getByText('J.R.R. Tolkien')).toBeInTheDocument();
+    expect(screen.getByText('Book')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+    expect(screen.queryByText('A Film')).not.toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('/search/media'), expect.anything());
+    expect(window.location.search).toBe('?q=hobbit&type=book');
+  });
+
+  test('a shared link opens the Books filter', async () => {
+    window.history.replaceState(null, '', '/?q=hobbit&type=book');
+    setRoutes({ bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    expect(await screen.findByText('The Hobbit')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Books' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('All includes books', async () => {
+    setRoutes({ search: searchResponse([FILM]), bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    search('adventure');
+
+    expect(await screen.findByText('The Hobbit')).toBeInTheDocument();
+    expect(screen.getByText('A Film')).toBeInTheDocument();
+    expect(headings()).toEqual(expect.arrayContaining(['Movies & Shows', 'Books']));
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/search/books'), {
+      params: { query: 'adventure', page: 1 },
+    });
+  });
+
+  test.each([
+    ['an exact title', 'the hobbit'],
+    ['an exact author', 'j.r.r. tolkien'],
+  ])('books come first for %s', async (_, query) => {
+    setRoutes({ search: searchResponse([FILM]), bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    search(query);
+    await screen.findByText('The Hobbit');
+    expect(headings().indexOf('Books')).toBeLessThan(headings().indexOf('Movies & Shows'));
+  });
+
+  test('books beat music when both are clear matches', async () => {
+    setRoutes({
+      search: searchResponse([FILM]),
+      bookSearch: searchResponse([{ ...HOBBIT, creators: 'Stephen King', title: 'It' }]),
+      musicText: [{ ...OK_COMPUTER, match: 'artist' }],
+    });
+    render(<App />);
+    search('stephen king');
+    await screen.findByText('It');
+    expect(headings().indexOf('Books')).toBeLessThan(headings().indexOf('Music'));
+    expect(headings().indexOf('Music')).toBeLessThan(headings().indexOf('Movies & Shows'));
+  });
+
+  test('a movie with the exact title stays ahead of books', async () => {
+    setRoutes({
+      search: searchResponse([{ ...DUNE, id: 2, title: 'The Hobbit' }]),
+      bookSearch: searchResponse([{ ...HOBBIT, id: 3 }]),
+    });
+    render(<App />);
+    search('the hobbit');
+    await screen.findByText('Book');
+    expect(headings().indexOf('Movies & Shows')).toBeLessThan(headings().indexOf('Books'));
+  });
+
+  test('books stay last when not a clear match', async () => {
+    setRoutes({ search: searchResponse([FILM]), bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    search('adventure');
+    await screen.findByText('The Hobbit');
+    expect(headings().indexOf('Movies & Shows')).toBeLessThan(headings().indexOf('Books'));
+  });
+
+  test('a book failure still shows everything else', async () => {
+    setRoutes({
+      search: searchResponse([FILM]),
+      bookSearch: { response: { status: 502, data: { detail: 'Could not reach Open Library' } } },
+    });
+    render(<App />);
+    search('adventure');
+    expect(await screen.findByText('A Film')).toBeInTheDocument();
+    expect(screen.getByText('Could not reach Open Library')).toBeInTheDocument();
+    expect(screen.queryByText('No results found.')).not.toBeInTheDocument();
+  });
+
+  test('only book results still count as found', async () => {
+    setRoutes({ bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    search('hobbit');
+    await screen.findByText('The Hobbit');
+    expect(screen.queryByText('No results found.')).not.toBeInTheDocument();
+  });
+
+  test('paging in All continues while books have more', async () => {
+    setRoutes({ search: searchResponse([FILM], 1, 1), bookSearch: searchResponse([HOBBIT], 1, 3) });
+    render(<App />);
+    search('adventure');
+    await screen.findByText('The Hobbit');
+    expect(screen.getByText('Page 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next →' })).toBeEnabled();
+
+    setRoutes({ search: searchResponse([], 2, 1), bookSearch: searchResponse([{ ...HOBBIT, id: 9, title: 'Next Book' }], 2, 3) });
+    fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+
+    expect(await screen.findByText('Next Book')).toBeInTheDocument();
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/search/books'), {
+      params: { query: 'adventure', page: 2 },
+    });
+  });
+
+  test('switching from All to a filter drops the book results', async () => {
+    setRoutes({ search: searchResponse([FILM]), bookSearch: searchResponse([HOBBIT]) });
+    render(<App />);
+    search('adventure');
+    await screen.findByText('The Hobbit');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Movies' }));
+
+    await waitFor(() => expect(screen.queryByText('The Hobbit')).not.toBeInTheDocument());
+    expect(await screen.findByText('A Film')).toBeInTheDocument();
+  });
+
+  test('a book page shows its details and reading words', async () => {
+    const status = await openBook();
+    expect(within(status).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'No status',
+      'Want to read',
+      'Reading',
+      'Read',
+    ]);
+    expect(await screen.findByText('A tale of adventure.')).toBeInTheDocument();
+    expect(screen.getByText('Fantasy, Dragons')).toBeInTheDocument();
+    const detail = screen.getByRole('region', { name: 'title detail' });
+    expect(within(detail).getByText('J.R.R. Tolkien')).toBeInTheDocument();
+    expect(within(detail).getByRole('link', { name: 'View on Open Library' })).toHaveAttribute(
+      'href',
+      'https://openlibrary.org/works/OL27482W'
+    );
+  });
+
+  test('a book page works if its details fail to load', async () => {
+    setRoutes({ book: { response: { status: 502, data: {} } } });
+    await openBook();
+    expect(await screen.findByText('No overview available.')).toBeInTheDocument();
+    expect(screen.getByLabelText('My rating')).toBeInTheDocument();
+  });
+
+  test('logging a book saves it and goes to My Library', async () => {
+    axios.put.mockResolvedValue({ data: bookItem({ rating: 9.25 }) });
+    setRoutes({ library: [bookItem({ status: 'finished', rating: 9.25, finished_date: '2026-11-01' })] });
+    await openBook();
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'finished' } });
+    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9.25' } });
+    fireEvent.change(screen.getByLabelText('Review'), { target: { value: 'Great' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('region', { name: 'my library' })).toBeInTheDocument();
+    const [url, body] = axios.put.mock.calls[0];
+    expect(url).toMatch(/\/library\/book\/27482$/);
+    expect(body).toMatchObject({
+      title: 'The Hobbit',
+      creators: 'J.R.R. Tolkien',
+      year: '1937',
+      poster_path: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+      status: 'finished',
+      rating: 9.25,
+      review: 'Great',
+    });
+    expect(await screen.findByText('Read', { selector: 'p' })).toBeInTheDocument();
+  });
+
+  test('a book can go on a shelf', async () => {
+    setRoutes({ shelves: [SHELF] });
+    axios.post.mockResolvedValue({ data: {} });
+    await openBook();
+    setRoutes({ item: bookItem({ shelf_ids: [5] }) });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Favorites' }));
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).toBeChecked());
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ media_type: 'book', source_id: 27482, creators: 'J.R.R. Tolkien' });
+  });
+
+  test('logged books are marked in search results', async () => {
+    setRoutes({ bookSearch: searchResponse([HOBBIT]), library: [bookItem({ status: 'finished', rating: 9 })] });
+    render(<App />);
+    search('hobbit');
+    expect(await screen.findByText('✓ Read · ★ 9')).toBeInTheDocument();
+  });
+
+  test('a book opens from My Library, using its own page', async () => {
+    const book = bookItem({ status: 'in_progress', rating: 7 });
+    setRoutes({ library: [book], item: book });
+    render(<App />);
+    goTo('My Library');
+    expect(await screen.findByText('Reading', { selector: 'p' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('The Hobbit'));
+
+    expect(await screen.findByLabelText('My rating')).toHaveValue('7');
+    expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/library\/book\/27482$/));
+    expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/books\/27482$/));
+  });
+
+  test.each([
+    ['My Library', () => goTo('My Library')],
+    ['a shelf', () => {}],
+  ])('%s can filter to books', async (name, open) => {
+    if (name === 'a shelf') {
+      window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+      setRoutes({ shelf: { ...SHELF, items: [libraryItem(), bookItem()] } });
+    } else {
+      setRoutes({ library: [bookItem()] });
+    }
+    render(<App />);
+    open();
+    const select = await screen.findByLabelText('Filter by type');
+    expect(within(select).getByRole('option', { name: 'Books' })).toBeInTheDocument();
+  });
+
+  test('books on a shelf show their author and open their page', async () => {
+    const book = bookItem();
+    window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+    setRoutes({ shelf: { ...SHELF, items: [book] }, item: book });
+    render(<App />);
+    expect(await screen.findByText(/Book · J.R.R. Tolkien/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('The Hobbit'));
+    expect(await screen.findByText('A tale of adventure.')).toBeInTheDocument();
+  });
+
+  test('searching My Library finds books by author', async () => {
+    setRoutes({ library: [libraryItem({ id: 1, title: 'Dune' }), bookItem()] });
+    render(<App />);
+    goTo('My Library');
+    await screen.findByText('The Hobbit');
+    fireEvent.change(screen.getByLabelText('Search your library'), { target: { value: 'tolkien' } });
+    expect(screen.getByText('The Hobbit')).toBeInTheDocument();
+    expect(screen.queryByText('Dune')).not.toBeInTheDocument();
   });
 });
 

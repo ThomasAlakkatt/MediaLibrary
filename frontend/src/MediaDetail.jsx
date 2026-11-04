@@ -624,6 +624,35 @@ export function ShelfPicker({ item, log, onLogChanged }) {
   );
 }
 
+// A book's description and subjects aren't in search results, so they're looked up when it opens. They're
+// extras, so if this fails the rest of the page still works.
+function BookInfo({ item }) {
+  const [book, setBook] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let current = true;
+    axios
+      .get(`${API_URL}/books/${item.id}`)
+      .then((response) => current && setBook(response.data))
+      .catch(() => {})
+      .finally(() => current && setLoaded(true));
+    return () => {
+      current = false;
+    };
+  }, [item.id]);
+
+  return (
+    <>
+      <h3>Overview</h3>
+      <p className="media-detail-overview">
+        {book?.description || (loaded ? 'No overview available.' : 'Loading overview…')}
+      </p>
+      {book?.subjects.length > 0 && <p className="movie-genres">{book.subjects.join(', ')}</p>}
+    </>
+  );
+}
+
 export default function MediaDetail({
   item,
   onBack,
@@ -695,7 +724,8 @@ export default function MediaDetail({
         </div>
 
         <div className="detail-movies">
-          {!music && (
+          {item.media_type === 'book' && <BookInfo item={item} />}
+          {!music && item.media_type !== 'book' && (
             <>
               <h3>Overview</h3>
               <p className="media-detail-overview">{item.overview || 'No overview available.'}</p>

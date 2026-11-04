@@ -4,13 +4,12 @@ An all-in-one logger for books, shows, movies, and music.
 
 This project is at an early stage and started as a copy of an earlier project, Music2Movies.
 
-- **Search:** search movies, shows and music together, or filter to one of them. Results show what's already logged.
+- **Search:** search movies, shows, music and books together, or filter to one of them. Results show what's already logged.
 - **Movies and shows:** search with the TMDB API, and log a status, rating, review and date finished. Each season of a show can also have its own status and date finished. A rating can be any number from 0 to 10, with up to 2 decimal places.
 - **My Library:** search, filter by type and status, and sort by date finished, release date, status, rating or title.
-- **Shelves:** ordered lists that mix movies, shows, albums and songs, like playlists. Search your shelves, or search, sort and filter what's on one.
+- **Shelves:** ordered lists that mix movies, shows, albums and songs, like playlists, and can hold books too. Search your shelves, or search, sort and filter what's on one.
 - **Music:** search with the Discogs API, and log a whole album or any of its songs, each as its own entry.
-
-Books aren't built yet.
+- **Books:** search with the Open Library API, which needs no key, and log them the same way.
 
 ## Your Data
 

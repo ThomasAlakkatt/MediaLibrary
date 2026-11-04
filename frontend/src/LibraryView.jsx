@@ -114,6 +114,7 @@ export default function LibraryView() {
             <option value="tv">Shows</option>
             <option value="album">Albums</option>
             <option value="song">Songs</option>
+            <option value="book">Books</option>
           </select>
           <select
             aria-label="Filter by status"

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API_URL, isMusic, logStatusText, posterUrl } from './api';
 
-export const TYPE_LABELS = { movie: 'Movie', tv: 'Show', album: 'Album', song: 'Song' };
+export const TYPE_LABELS = { movie: 'Movie', tv: 'Show', album: 'Album', song: 'Song', book: 'Book' };
 
 export function LoggedBadge({ log }) {
   const status = logStatusText(log) ?? 'Logged';

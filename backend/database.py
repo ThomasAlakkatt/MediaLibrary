@@ -6,18 +6,19 @@ from pathlib import Path
 
 DEFAULT_DB_PATH = Path(__file__).parent / "medialibrary.db"
 
-# library_items holds one row per movie, show, album or song, with a copy of its details so the library
-# can be shown without calling TMDB or Discogs. Log fields are all optional because a title can be on a
+# library_items holds one row per movie, show, album, song or book, with a copy of its details so the
+# library can be shown without calling TMDB, Discogs or Open Library. Log fields are all optional because a title can be on a
 # shelf without being logged. A rating is any number from 0 to 10.
 #
-# source_id is the source's ID: TMDB's for movies and shows, and the Discogs master's for albums and songs.
-# poster_path is a TMDB path for movies and shows, and a full image address for music. A song has no ID
+# source_id is the source's ID: TMDB's for movies and shows, the Discogs master's for albums and songs, and
+# the number in Open Library's work ID for books. creators holds a music title's artists or a book's authors.
+# poster_path is a TMDB path for movies and shows, and a full image address for music and books. A song has no ID
 # of its own, so it's identified by its album's ID plus its place in the tracklist (track_index, which
 # stays -1 for everything else).
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS library_items (
     id INTEGER PRIMARY KEY,
-    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv', 'album', 'song')),
+    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv', 'album', 'song', 'book')),
     source_id INTEGER NOT NULL,
     track_index INTEGER NOT NULL DEFAULT -1,
     title TEXT NOT NULL,
@@ -80,7 +81,7 @@ def get_connection():
 
 
 # Stored in the database file, so an older library can be upgraded when the app starts.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 # Version 0 only allowed ratings of 0.5 and up. SQLite can't edit a CHECK rule in place, so each table
@@ -247,6 +248,43 @@ def _upgrade_to_version_6():
         connection.execute("ALTER TABLE library_items RENAME COLUMN artists TO creators")
 
 
+# Version 6 had no books. Allowing a new type means replacing a CHECK rule, so the table is rebuilt with every
+# row and ID kept, which leaves shelves and season logs still pointing at the right rows.
+def _upgrade_to_version_7():
+    path = _db_path()
+    shutil.copy2(path, f"{path}-before-books")
+
+    connection = sqlite3.connect(path, isolation_level=None)
+    try:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("BEGIN")
+        try:
+            old_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'library_items'"
+            ).fetchone()[0]
+            old_rule = "CHECK (media_type IN ('movie', 'tv', 'album', 'song'))"
+            if old_rule not in old_sql:
+                raise RuntimeError("Database upgrade didn't find the rule it needs to change")
+            new_sql = old_sql.replace(
+                old_rule, "CHECK (media_type IN ('movie', 'tv', 'album', 'song', 'book'))"
+            ).replace("CREATE TABLE \"library_items\"", "CREATE TABLE new_library_items").replace(
+                "CREATE TABLE library_items", "CREATE TABLE new_library_items"
+            )
+            connection.execute(new_sql)
+            connection.execute("INSERT INTO new_library_items SELECT * FROM library_items")
+            connection.execute("DROP TABLE library_items")
+            connection.execute("ALTER TABLE new_library_items RENAME TO library_items")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("Database upgrade would break links between tables")
+            connection.execute("PRAGMA user_version = 7")
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+
+
 def init_db():
     with get_connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -266,6 +304,8 @@ def init_db():
         _upgrade_to_version_5()
     if has_library and version < 6:
         _upgrade_to_version_6()
+    if has_library and version < 7:
+        _upgrade_to_version_7()
 
     with get_connection() as connection:
         connection.executescript(SCHEMA)

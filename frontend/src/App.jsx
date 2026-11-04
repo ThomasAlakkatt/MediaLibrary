@@ -15,6 +15,7 @@ const TABS = [
   { id: 'all', label: 'All' },
   { id: 'movie', label: 'Movies' },
   { id: 'tv', label: 'Shows' },
+  { id: 'book', label: 'Books' },
   { id: 'music', label: 'Music' },
 ];
 
@@ -29,7 +30,7 @@ function getInitialTab() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('artist') || params.get('release')) return 'music';
   const type = params.get('type');
-  return type === 'movie' || type === 'tv' ? type : 'all';
+  return type === 'movie' || type === 'tv' || type === 'book' ? type : 'all';
 }
 
 function getViewFromUrl() {

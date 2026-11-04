@@ -79,7 +79,7 @@ export function formatDate(text) {
   return new Date(year, month - 1, day).toLocaleDateString(undefined, { dateStyle: 'medium' });
 }
 
-// TMDB gives a path to build an image address from, while Discogs gives the full address.
+// TMDB gives a path to build an image address from, while music and books have the full address.
 export function posterUrl(posterPath, size = 'w342') {
   if (posterPath.startsWith('http')) return posterPath;
   return `https://image.tmdb.org/t/p/${size}${posterPath}`;
@@ -125,6 +125,9 @@ export function logUrl(item) {
 }
 
 export function externalLink(item) {
+  if (item.media_type === 'book') {
+    return { url: `https://openlibrary.org/works/OL${item.id}W`, label: 'View on Open Library' };
+  }
   return isMusic(item.media_type)
     ? { url: `https://www.discogs.com/master/${item.id}`, label: 'View on Discogs' }
     : { url: `https://www.themoviedb.org/${item.media_type}/${item.id}`, label: 'View on TMDB' };

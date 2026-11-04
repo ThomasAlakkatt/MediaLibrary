@@ -411,7 +411,7 @@ def test_upgrade_removes_season_ratings_and_keeps_the_rest(tmp_path, monkeypatch
     connection = sqlite3.connect(tmp_path / "v1.db")
     columns = [row[1] for row in connection.execute("PRAGMA table_info(season_logs)")]
     assert columns == ["item_id", "season_number", "status", "finished_on"]
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
     connection.close()
 
 
