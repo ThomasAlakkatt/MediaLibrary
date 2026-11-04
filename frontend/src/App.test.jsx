@@ -1700,6 +1700,205 @@ describe('pagination', () => {
   });
 });
 
+describe('searching lists', () => {
+  const typeIn = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const title = (id, name, overrides = {}) => libraryItem({ id, tmdb_id: id, title: name, ...overrides });
+  const MIXED = [
+    title(1, 'Dune'),
+    title(2, 'Airbag', { media_type: 'song', artists: 'Radiohead', album_title: 'OK Computer' }),
+    title(3, 'OK Computer', { media_type: 'album', artists: 'Radiohead' }),
+    title(4, 'Ágætis byrjun', { media_type: 'album', artists: 'Sigur Rós' }),
+  ];
+  const many = (count) => Array.from({ length: count }, (_, i) => title(i + 1, `Title ${i + 1}`));
+
+  describe('My Library', () => {
+    async function openLibrary(library = MIXED) {
+      setRoutes({ library });
+      render(<App />);
+      goTo('My Library');
+      await screen.findByLabelText('Search your library');
+      await screen.findByText(library[0].title);
+    }
+
+    test.each([
+      ['dune', ['Dune']],
+      ['DUNE', ['Dune']],
+      ['radiohead', ['Airbag', 'OK Computer']],
+      ['ok computer', ['Airbag', 'OK Computer']],
+      ['airbag radiohead', ['Airbag']],
+      ['sigur ros', ['Ágætis byrjun']],
+      ['  dune  ', ['Dune']],
+    ])('searching %j finds %j', async (query, expected) => {
+      await openLibrary();
+      typeIn('Search your library', query);
+      const shown = [...document.querySelectorAll('.result-info h2')].map((el) => el.textContent);
+      expect(shown).toEqual(expected);
+    });
+
+    test('says when nothing matches', async () => {
+      await openLibrary();
+      typeIn('Search your library', 'zzz');
+      expect(screen.getByText('Nothing in your library matches “zzz”.')).toBeInTheDocument();
+      expect(screen.queryByText(/Nothing logged yet/)).not.toBeInTheDocument();
+    });
+
+    test('searches every page, not just the one showing', async () => {
+      await openLibrary(many(25));
+      expect(screen.queryByText('Title 25')).not.toBeInTheDocument();
+      typeIn('Search your library', 'title 25');
+      expect(screen.getByText('Title 25')).toBeInTheDocument();
+    });
+
+    test('searching goes back to the first page, and results are paged', async () => {
+      await openLibrary(many(25));
+      fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+      typeIn('Search your library', 'title 1');
+      expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+      expect(screen.getByText('Title 1')).toBeInTheDocument();
+
+      typeIn('Search your library', '');
+      expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+    });
+
+    test('works with the filters, without another search request', async () => {
+      await openLibrary();
+      typeIn('Filter by type', 'album');
+      setRoutes({ library: MIXED.filter((item) => item.media_type === 'album') });
+      await waitFor(() => expect(screen.queryByText('Dune')).toBeInTheDocument());
+      typeIn('Search your library', 'radiohead');
+      expect(screen.getByText('Airbag')).toBeInTheDocument();
+      expect(screen.getByLabelText('Search your library')).toHaveValue('radiohead');
+    });
+
+    test('the search stays when coming back from a title', async () => {
+      await openLibrary();
+      typeIn('Search your library', 'dune');
+      fireEvent.click(screen.getByText('Dune'));
+      await screen.findByLabelText('My rating');
+      fireEvent.click(screen.getByRole('button', { name: '← Back to My Library' }));
+
+      await screen.findByLabelText('Search your library');
+      expect(screen.getByLabelText('Search your library')).toHaveValue('dune');
+      expect(await screen.findByText('Dune')).toBeInTheDocument();
+      expect(screen.queryByText('Airbag')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the Shelves page', () => {
+    const shelves = [
+      { ...SHELF, id: 1, name: 'Comedy Night' },
+      { ...SHELF, id: 2, name: 'Sci-Fi Night' },
+      { ...SHELF, id: 3, name: 'Favorites' },
+    ];
+
+    async function openShelves(list = shelves) {
+      setRoutes({ shelves: list });
+      render(<App />);
+      goTo('Shelves');
+      await screen.findByText(list[0].name);
+    }
+
+    test('searches shelf names', async () => {
+      await openShelves();
+      typeIn('Search your shelves', 'NIGHT');
+      expect(screen.getByText('Comedy Night')).toBeInTheDocument();
+      expect(screen.getByText('Sci-Fi Night')).toBeInTheDocument();
+      expect(screen.queryByText('Favorites')).not.toBeInTheDocument();
+    });
+
+    test('says when nothing matches', async () => {
+      await openShelves();
+      typeIn('Search your shelves', 'zzz');
+      expect(screen.getByText('No shelves match “zzz”.')).toBeInTheDocument();
+    });
+
+    test('searches every page', async () => {
+      await openShelves(Array.from({ length: 15 }, (_, i) => ({ ...SHELF, id: i + 1, name: `Shelf ${i + 1}` })));
+      expect(screen.queryByText('Shelf 15')).not.toBeInTheDocument();
+      typeIn('Search your shelves', 'shelf 15');
+      expect(screen.getByText('Shelf 15')).toBeInTheDocument();
+    });
+
+    test('searching does not create a shelf', async () => {
+      await openShelves();
+      typeIn('Search your shelves', 'new');
+      expect(screen.getByLabelText('New shelf name')).toHaveValue('');
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('inside a shelf', () => {
+    function numberOf(name) {
+      const row = screen.getByText(name).closest('li');
+      return row.querySelector('.shelf-item-number').textContent;
+    }
+
+    async function openShelf(items = MIXED) {
+      window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+      setRoutes({ shelf: { ...SHELF, items } });
+      render(<App />);
+      await screen.findByText(items[0].title);
+    }
+
+    test('searches titles and artists, keeping their shelf numbers', async () => {
+      await openShelf();
+      typeIn('Search this shelf', 'radiohead');
+      expect(screen.queryByText('Dune')).not.toBeInTheDocument();
+      expect(numberOf('Airbag')).toBe('2');
+      expect(numberOf('OK Computer')).toBe('3');
+    });
+
+    test('searches every page', async () => {
+      await openShelf(many(15));
+      expect(screen.queryByText('Title 15')).not.toBeInTheDocument();
+      typeIn('Search this shelf', 'title 15');
+      expect(numberOf('Title 15')).toBe('15');
+    });
+
+    test('says when nothing matches', async () => {
+      await openShelf();
+      typeIn('Search this shelf', 'zzz');
+      expect(screen.getByText('Nothing on this shelf matches “zzz”.')).toBeInTheDocument();
+    });
+
+    test('reordering is off while searching and comes back after', async () => {
+      await openShelf();
+      expect(screen.getByRole('button', { name: 'Move Dune down' })).toBeInTheDocument();
+
+      typeIn('Search this shelf', 'radiohead');
+      expect(screen.getByText('Clear the search to reorder this shelf.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Move / })).not.toBeInTheDocument();
+      expect(screen.getByText('Airbag').closest('li')).toHaveAttribute('draggable', 'false');
+
+      typeIn('Search this shelf', '');
+      expect(screen.getByRole('button', { name: 'Move Dune down' })).toBeInTheDocument();
+      expect(screen.getByText('Airbag').closest('li')).toHaveAttribute('draggable', 'true');
+    });
+
+    test('a title can be removed while searching', async () => {
+      await openShelf();
+      axios.delete.mockResolvedValue({ data: { ...SHELF, items: MIXED.filter((item) => item.id !== 2) } });
+      typeIn('Search this shelf', 'radiohead');
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Airbag from shelf' }));
+
+      await waitFor(() => expect(screen.queryByText('Airbag')).not.toBeInTheDocument());
+      expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/shelves/5/items/2'));
+      expect(screen.getByText('OK Computer')).toBeInTheDocument();
+      expect(screen.getByLabelText('Search this shelf')).toHaveValue('radiohead');
+    });
+
+    test('an empty shelf has no search box', async () => {
+      window.history.replaceState(null, '', '/?view=shelves&shelf=5');
+      setRoutes({ shelf: { ...SHELF, items: [] } });
+      render(<App />);
+      await screen.findByText(/This shelf is empty/);
+      expect(screen.queryByLabelText('Search this shelf')).not.toBeInTheDocument();
+    });
+  });
+});
+
 test('My Library lists logged titles with my rating', async () => {
   setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
   render(<App />);

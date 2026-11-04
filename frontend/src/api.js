@@ -85,6 +85,28 @@ export function posterUrl(posterPath, size = 'w342') {
   return `https://image.tmdb.org/t/p/${size}${posterPath}`;
 }
 
+// Ignores capitals and accents, so "sigur ros" finds "Sigur Rós".
+function searchable(text) {
+  return (text ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+// Every word searched for must appear somewhere in the given fields, in any order, so "radiohead airbag"
+// finds the song Airbag by Radiohead.
+export function matchesSearch(query, fields) {
+  const haystack = searchable(fields.join(' '));
+  return searchable(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.includes(word));
+}
+
+export function titleMatchesSearch(query, item) {
+  return matchesSearch(query, [item.title, item.artists, item.album_title]);
+}
+
 export function isMusic(mediaType) {
   return mediaType === 'album' || mediaType === 'song';
 }

@@ -8,7 +8,9 @@ import {
   libraryItemToMedia,
   logStatusText,
   statusLabels,
+  titleMatchesSearch,
 } from './api';
+import ListSearch from './ListSearch';
 import { Clapperboard } from './Loaders';
 import MediaCard from './MediaCard';
 import Pagination, { usePagination } from './Pagination';
@@ -29,7 +31,9 @@ export default function LibraryView() {
   const [status, setStatus] = useState('');
   const [sortOption, setSortOption] = useState('changed:desc');
   const [selected, setSelected] = useState(null);
-  const pagination = usePagination(items ?? []);
+  const [query, setQuery] = useState('');
+  const matchingItems = (items ?? []).filter((item) => titleMatchesSearch(query, item));
+  const pagination = usePagination(matchingItems);
 
   // Also reloads when coming back from a title's page, since its log may have changed there.
   useEffect(() => {
@@ -123,6 +127,16 @@ export default function LibraryView() {
         </div>
       </div>
 
+      <ListSearch
+        label="Search your library"
+        placeholder="Search your library by title or artist"
+        value={query}
+        onChange={(value) => {
+          setQuery(value);
+          pagination.resetPage();
+        }}
+      />
+
       {error && <p className="search-error">{error}</p>}
       {items === null && <Clapperboard label="Loading your library…" />}
       {items?.length === 0 && !error && (
@@ -132,7 +146,10 @@ export default function LibraryView() {
             : 'Nothing logged yet. Search for something, then open it to log it.'}
         </p>
       )}
-      {items?.length > 0 && (
+      {items?.length > 0 && matchingItems.length === 0 && (
+        <p className="empty-state-hint page-empty">Nothing in your library matches “{query.trim()}”.</p>
+      )}
+      {matchingItems.length > 0 && (
         <div className="results">
           {pagination.pageItems.map((item) => (
             <MediaCard

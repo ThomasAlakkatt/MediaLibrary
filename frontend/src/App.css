@@ -867,7 +867,8 @@ main {
 .detail-view input[type='text'],
 .detail-view textarea,
 .page select,
-.page input[type='text'] {
+.page input[type='text'],
+.page input[type='search'] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1380,4 +1381,18 @@ label.track-content {
 
 .music-card .result-info .logged-badge {
   margin-top: 2px;
+}
+
+.list-search {
+  margin: 16px 0 0;
+  max-width: 420px;
+}
+
+.list-search input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.list-search + .movie-status {
+  margin-top: 10px;
 }

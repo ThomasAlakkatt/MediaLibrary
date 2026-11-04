@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_URL, getErrorMessage, libraryItemToMedia, posterUrl } from './api';
+import {
+  API_URL,
+  getErrorMessage,
+  libraryItemToMedia,
+  matchesSearch,
+  posterUrl,
+  titleMatchesSearch,
+} from './api';
+import ListSearch from './ListSearch';
 import { Clapperboard } from './Loaders';
 import { TYPE_LABELS } from './MediaCard';
 import Pagination, { usePagination } from './Pagination';
@@ -21,7 +29,10 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dropIndex, setDropIndex] = useState(null);
   const dragIndex = useRef(null);
-  const itemsPage = usePagination(shelf?.items ?? []);
+  const [query, setQuery] = useState('');
+  const searching = Boolean(query.trim());
+  const matchingItems = (shelf?.items ?? []).filter((item) => titleMatchesSearch(query, item));
+  const itemsPage = usePagination(matchingItems);
 
   // Also reloads when coming back from a title's page, since it may have left this shelf there.
   useEffect(() => {
@@ -168,14 +179,31 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
               This shelf is empty. Search for something, then open it to add it here.
             </p>
           ) : (
+            <>
+            <ListSearch
+              label="Search this shelf"
+              placeholder="Search this shelf by title or artist"
+              value={query}
+              onChange={(value) => {
+                setQuery(value);
+                itemsPage.resetPage();
+              }}
+            />
+            {searching && matchingItems.length > 0 && (
+              <p className="movie-status">Clear the search to reorder this shelf.</p>
+            )}
+            {matchingItems.length === 0 && (
+              <p className="empty-state-hint page-empty">Nothing on this shelf matches “{query.trim()}”.</p>
+            )}
             <ol className="shelf-items">
-              {itemsPage.pageItems.map((item, pageIndex) => {
-                const index = itemsPage.startIndex + pageIndex;
+              {itemsPage.pageItems.map((item) => {
+                // Its place on the whole shelf, which stays the same while searching.
+                const index = shelf.items.indexOf(item);
                 return (
                 <li
                   key={item.id}
                   className={`shelf-item${dropIndex === index ? ' shelf-item--drop-target' : ''}`}
-                  draggable
+                  draggable={!searching}
                   onDragStart={(event) => {
                     dragIndex.current = index;
                     event.dataTransfer.effectAllowed = 'move';
@@ -215,24 +243,28 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                   </button>
                   {item.rating !== null && <span className="my-rating">★ {item.rating}</span>}
                   <div className="shelf-item-actions">
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Move ${item.title} up`}
-                      disabled={index === 0}
-                      onClick={() => reorder(index, index - 1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Move ${item.title} down`}
-                      disabled={index === shelf.items.length - 1}
-                      onClick={() => reorder(index, index + 1)}
-                    >
-                      ↓
-                    </button>
+                    {!searching && (
+                      <>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Move ${item.title} up`}
+                          disabled={index === 0}
+                          onClick={() => reorder(index, index - 1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Move ${item.title} down`}
+                          disabled={index === shelf.items.length - 1}
+                          onClick={() => reorder(index, index + 1)}
+                        >
+                          ↓
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="icon-btn"
@@ -246,6 +278,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
               );
               })}
             </ol>
+            </>
           )}
           <Pagination
             page={itemsPage.page}
@@ -262,7 +295,9 @@ function ShelfList({ onOpenShelf }) {
   const [shelves, setShelves] = useState(null);
   const [name, setName] = useState('');
   const [error, setError] = useState(null);
-  const shelvesPage = usePagination(shelves ?? []);
+  const [query, setQuery] = useState('');
+  const matchingShelves = (shelves ?? []).filter((shelf) => matchesSearch(query, [shelf.name]));
+  const shelvesPage = usePagination(matchingShelves);
 
   useEffect(() => {
     let current = true;
@@ -313,6 +348,16 @@ function ShelfList({ onOpenShelf }) {
         </form>
       </div>
 
+      <ListSearch
+        label="Search your shelves"
+        placeholder="Search your shelves by name"
+        value={query}
+        onChange={(value) => {
+          setQuery(value);
+          shelvesPage.resetPage();
+        }}
+      />
+
       {error && <p className="search-error">{error}</p>}
       {shelves === null && <Clapperboard label="Loading shelves…" />}
       {shelves?.length === 0 && !error && (
@@ -320,7 +365,10 @@ function ShelfList({ onOpenShelf }) {
           No shelves yet. Create one to mix movies, shows and music, like a playlist.
         </p>
       )}
-      {shelves?.length > 0 && (
+      {shelves?.length > 0 && matchingShelves.length === 0 && (
+        <p className="empty-state-hint page-empty">No shelves match “{query.trim()}”.</p>
+      )}
+      {matchingShelves.length > 0 && (
         <div className="results">
           {shelvesPage.pageItems.map((shelf) => (
             <button
