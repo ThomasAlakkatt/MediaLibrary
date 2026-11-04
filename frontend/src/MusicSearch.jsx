@@ -181,10 +181,12 @@ export default function MusicSearch({ initialRelease, onBack }) {
   async function handleReleaseClick(release) {
     setSelectedRelease(release);
 
-    if (movieCache[release.id]) {
+    // Only successful lookups are kept, so a failed one is tried again next time.
+    if (movieCache[release.id]?.movies) {
       return;
     }
 
+    setMovieCache((prev) => ({ ...prev, [release.id]: undefined }));
     setMoviesLoadingId(release.id);
 
     try {
@@ -198,7 +200,7 @@ export default function MusicSearch({ initialRelease, onBack }) {
         },
       }));
     } finally {
-      setMoviesLoadingId(null);
+      setMoviesLoadingId((current) => (current === release.id ? null : current));
     }
   }
 
@@ -411,7 +413,16 @@ export default function MusicSearch({ initialRelease, onBack }) {
                 <Clapperboard label="Loading movies…" />
               )}
               {selectedCacheEntry?.error && (
-                <p className="movie-status movie-error">{selectedCacheEntry.error}</p>
+                <div className="movie-retry">
+                  <p className="movie-status movie-error">{selectedCacheEntry.error}</p>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => handleReleaseClick(selectedRelease)}
+                  >
+                    Try again
+                  </button>
+                </div>
               )}
               {selectedCacheEntry?.movies?.length === 0 && (
                 <p className="movie-status">No movie recommendations found for this release.</p>

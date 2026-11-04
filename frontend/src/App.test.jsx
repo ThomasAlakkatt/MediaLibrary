@@ -280,6 +280,92 @@ test.each([
   );
 });
 
+describe('when recommendations fail', () => {
+  const FAILED = { response: { status: 502, data: { detail: 'Could not reach TMDB' } } };
+  const MOVIE = { id: 70, title: 'Recommended Movie', overview: 'Good.', genres: [] };
+
+  function recommendationCalls() {
+    return axios.get.mock.calls.filter(([url]) => url.includes('/movies/')).length;
+  }
+
+  async function openFailedRelease() {
+    setRoutes({ music: [OK_COMPUTER], recommendations: FAILED });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+    clickSearch();
+    fireEvent.click(await screen.findByText('OK Computer'));
+    await screen.findByText('Could not reach TMDB');
+  }
+
+  test('Try again loads them without reloading the page', async () => {
+    await openFailedRelease();
+    setRoutes({ recommendations: [MOVIE] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
+    expect(screen.queryByText('Could not reach TMDB')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  test('the old error goes away while trying again', async () => {
+    await openFailedRelease();
+    setRoutes({ recommendations: () => new Promise(() => {}) });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Loading movies…')).toBeInTheDocument();
+    expect(screen.queryByText('Could not reach TMDB')).not.toBeInTheDocument();
+  });
+
+  test('failing again shows the error again', async () => {
+    await openFailedRelease();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Could not reach TMDB')).toBeInTheDocument();
+    expect(recommendationCalls()).toBe(2);
+  });
+
+  test('reopening the release tries again', async () => {
+    await openFailedRelease();
+    fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
+    setRoutes({ recommendations: [MOVIE] });
+    fireEvent.click(await screen.findByText('OK Computer'));
+
+    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
+  });
+
+  test('successful recommendations are not fetched again', async () => {
+    setRoutes({ music: [OK_COMPUTER], recommendations: [MOVIE] });
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Music' }));
+    fireEvent.change(screen.getByLabelText('Artist'), { target: { value: 'Radiohead' } });
+    clickSearch();
+    fireEvent.click(await screen.findByText('OK Computer'));
+    await screen.findByText('Recommended Movie');
+
+    fireEvent.click(screen.getByRole('button', { name: '← Back to results' }));
+    fireEvent.click(await screen.findByText('OK Computer'));
+
+    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
+    expect(recommendationCalls()).toBe(1);
+  });
+
+  test('Try again also works for a release opened from All', async () => {
+    setRoutes({ musicText: [OK_COMPUTER], recommendations: FAILED });
+    render(<App />);
+    search('radiohead');
+    fireEvent.click(await screen.findByText('OK Computer'));
+    await screen.findByText('Could not reach TMDB');
+
+    setRoutes({ recommendations: [MOVIE] });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Recommended Movie')).toBeInTheDocument();
+  });
+});
+
 test('the Music tab still goes back to its own results', async () => {
   setRoutes({ music: [OK_COMPUTER], recommendations: [] });
   render(<App />);
