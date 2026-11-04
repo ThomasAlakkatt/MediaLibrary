@@ -78,7 +78,6 @@ Run these from `frontend/`:
 - @testing-library/user-event
 - @vitejs/plugin-react
 - eslint
-- eslint-plugin-react
 - eslint-plugin-react-hooks
 - globals
 - jsdom
