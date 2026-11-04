@@ -19,12 +19,6 @@ export default function MusicSearch({ initialRelease, onBack, onLogSubmitted }) 
 
   const [selectedRelease, setSelectedRelease] = useState(initialRelease ?? null);
 
-  const [artistSuggestions, setArtistSuggestions] = useState([]);
-  const [releaseSuggestions, setReleaseSuggestions] = useState([]);
-  const [showArtistSuggestions, setShowArtistSuggestions] = useState(false);
-  const [showReleaseSuggestions, setShowReleaseSuggestions] = useState(false);
-  const artistDebounceRef = useRef(null);
-  const releaseDebounceRef = useRef(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const isMounted = useRef(true);
 
@@ -36,10 +30,6 @@ export default function MusicSearch({ initialRelease, onBack, onLogSubmitted }) 
     setPage(1);
     setHasSearched(false);
     setPlaceholdersHidden(false);
-    setArtistSuggestions([]);
-    setReleaseSuggestions([]);
-    setShowArtistSuggestions(false);
-    setShowReleaseSuggestions(false);
     window.history.replaceState(null, '', window.location.pathname);
   }
 
@@ -103,59 +93,6 @@ export default function MusicSearch({ initialRelease, onBack, onLogSubmitted }) 
     });
   }
 
-  async function fetchSuggestions(field, value) {
-    if (!value.trim()) {
-      if (field === 'artist') setArtistSuggestions([]);
-      else setReleaseSuggestions([]);
-      return;
-    }
-
-    try {
-      const params =
-        field === 'artist' ? { artist: value, title: '' } : { artist: '', title: value };
-      const response = await axios.get(`${API_URL}/search`, { params });
-
-      const values =
-        field === 'artist'
-          ? response.data.flatMap((release) => release.artists)
-          : response.data.map((release) => release.title);
-      const unique = [...new Set(values)].slice(0, 6);
-
-      if (field === 'artist') setArtistSuggestions(unique);
-      else setReleaseSuggestions(unique);
-    } catch {
-      // Suggestions are a nice-to-have; silently ignore failures here.
-      if (field === 'artist') setArtistSuggestions([]);
-      else setReleaseSuggestions([]);
-    }
-  }
-
-  function handleArtistChange(event) {
-    const value = event.target.value;
-    setArtistName(value);
-    setShowArtistSuggestions(true);
-    clearTimeout(artistDebounceRef.current);
-    artistDebounceRef.current = setTimeout(() => fetchSuggestions('artist', value), 400);
-  }
-
-  function handleReleaseChange(event) {
-    const value = event.target.value;
-    setReleaseTitle(value);
-    setShowReleaseSuggestions(true);
-    clearTimeout(releaseDebounceRef.current);
-    releaseDebounceRef.current = setTimeout(() => fetchSuggestions('release', value), 400);
-  }
-
-  function selectArtistSuggestion(value) {
-    setArtistName(value);
-    setShowArtistSuggestions(false);
-  }
-
-  function selectReleaseSuggestion(value) {
-    setReleaseTitle(value);
-    setShowReleaseSuggestions(false);
-  }
-
   async function handleSearch(event) {
     event.preventDefault();
 
@@ -206,22 +143,9 @@ export default function MusicSearch({ initialRelease, onBack, onLogSubmitted }) 
                     maxLength="100"
                     placeholder={placeholdersHidden ? '' : 'Taylor Swift'}
                     value={artistName}
-                    onFocus={() => {
-                      setPlaceholdersHidden(true);
-                      setShowArtistSuggestions(true);
-                    }}
-                    onBlur={() => setTimeout(() => setShowArtistSuggestions(false), 150)}
-                    onChange={handleArtistChange}
+                    onFocus={() => setPlaceholdersHidden(true)}
+                    onChange={(event) => setArtistName(event.target.value)}
                   />
-                  {showArtistSuggestions && artistSuggestions.length > 0 && (
-                    <ul className="suggestions-dropdown">
-                      {artistSuggestions.map((suggestion) => (
-                        <li key={suggestion} onMouseDown={() => selectArtistSuggestion(suggestion)}>
-                          {suggestion}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
                 <div className="input-group">
                   <label htmlFor="artist-release">Release</label>
@@ -233,22 +157,9 @@ export default function MusicSearch({ initialRelease, onBack, onLogSubmitted }) 
                     maxLength="100"
                     placeholder={placeholdersHidden ? '' : '22'}
                     value={releaseTitle}
-                    onFocus={() => {
-                      setPlaceholdersHidden(true);
-                      setShowReleaseSuggestions(true);
-                    }}
-                    onBlur={() => setTimeout(() => setShowReleaseSuggestions(false), 150)}
-                    onChange={handleReleaseChange}
+                    onFocus={() => setPlaceholdersHidden(true)}
+                    onChange={(event) => setReleaseTitle(event.target.value)}
                   />
-                  {showReleaseSuggestions && releaseSuggestions.length > 0 && (
-                    <ul className="suggestions-dropdown">
-                      {releaseSuggestions.map((suggestion) => (
-                        <li key={suggestion} onMouseDown={() => selectReleaseSuggestion(suggestion)}>
-                          {suggestion}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
               </div>
               <div className="search-actions">
