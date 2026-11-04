@@ -37,13 +37,13 @@ def _ensure_item(connection, media_type, source_id, details, track_index=-1):
     connection.execute(
         """
         INSERT INTO library_items (
-            media_type, source_id, track_index, title, artists, album_title,
+            media_type, source_id, track_index, title, creators, album_title,
             year, release_date, poster_path, overview
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (media_type, source_id, track_index) DO UPDATE SET
             title = excluded.title,
-            artists = excluded.artists,
+            creators = excluded.creators,
             album_title = excluded.album_title,
             year = excluded.year,
             release_date = COALESCE(excluded.release_date, release_date),
@@ -55,7 +55,7 @@ def _ensure_item(connection, media_type, source_id, details, track_index=-1):
             source_id,
             track_index,
             details["title"],
-            details.get("artists"),
+            details.get("creators"),
             details.get("album_title"),
             details.get("year"),
             details.get("release_date"),

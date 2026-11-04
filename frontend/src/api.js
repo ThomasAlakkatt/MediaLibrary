@@ -104,7 +104,7 @@ export function matchesSearch(query, fields) {
 }
 
 export function titleMatchesSearch(query, item) {
-  return matchesSearch(query, [item.title, item.artists, item.album_title]);
+  return matchesSearch(query, [item.title, item.creators, item.album_title]);
 }
 
 // The statuses a title counts as having: its own, or those of its seasons if it has none.
@@ -136,7 +136,7 @@ export function releaseToMedia(release) {
     id: release.id,
     media_type: 'album',
     title: release.title,
-    artists: release.artists?.join(', ') || undefined,
+    creators: release.artists?.join(', ') || undefined,
     year: release.year || undefined,
     poster_path: release.cover_image || release.thumb || undefined,
   };
@@ -146,7 +146,7 @@ export function releaseToMedia(release) {
 export function titleDetails(media) {
   return {
     title: media.title,
-    artists: media.artists,
+    creators: media.creators,
     album_title: media.album_title,
     year: media.year,
     release_date: media.release_date,

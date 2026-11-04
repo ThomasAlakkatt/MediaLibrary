@@ -127,7 +127,7 @@ ShelfName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 # The TMDB details stored with a title, so the library can be shown without calling TMDB.
 class TitleDetails(BaseModel):
     title: str = Field(min_length=1)
-    artists: Optional[str] = None
+    creators: Optional[str] = None
     album_title: Optional[str] = None
     year: Optional[str] = None
     release_date: Optional[str] = None
@@ -168,7 +168,7 @@ def _split_details(body, log_fields):
         key: data[key]
         for key in (
             "title",
-            "artists",
+            "creators",
             "album_title",
             "year",
             "release_date",

@@ -67,7 +67,7 @@ export default function AlbumDetail({
   const details = {
     ...item,
     title: item.title ?? album?.title,
-    artists: item.artists ?? album?.artists.join(', '),
+    creators: item.creators ?? album?.artists.join(', '),
     year: item.year ?? album?.year,
     poster_path: item.poster_path ?? album?.cover_image,
   };
@@ -100,7 +100,7 @@ export default function AlbumDetail({
       track_index: track.track_index,
       title: track.title,
       album_title: details.title,
-      artists: details.artists,
+      creators: details.creators,
       year: details.year,
       release_date: details.release_date,
       poster_path: details.poster_path,
@@ -125,7 +125,7 @@ export default function AlbumDetail({
             <div className="detail-release-image detail-release-image--placeholder">No Image</div>
           )}
           <h2>{details.title}</h2>
-          <p className="detail-release-artist">{details.artists}</p>
+          <p className="detail-release-artist">{details.creators}</p>
           {details.year && <p className="detail-release-year">{details.year}</p>}
           <a
             className="movie-trailer-link"

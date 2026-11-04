@@ -372,7 +372,7 @@ function ShelfPage({ shelfId, onBack, onLogSubmitted }) {
                   <button type="button" className="shelf-item-title" onClick={() => setSelected(item)}>
                     <span className="season-name">{item.title}</span>
                     <span className="season-meta">
-                      {[TYPE_LABELS[item.media_type], item.artists, item.year].filter(Boolean).join(' · ')}
+                      {[TYPE_LABELS[item.media_type], item.creators, item.year].filter(Boolean).join(' · ')}
                     </span>
                     {(logStatusText(item) || sortKind === 'finished' || sortKind === 'release') && (
                       <span className="season-meta">

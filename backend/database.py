@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS library_items (
     source_id INTEGER NOT NULL,
     track_index INTEGER NOT NULL DEFAULT -1,
     title TEXT NOT NULL,
-    artists TEXT,
+    creators TEXT,
     album_title TEXT,
     year TEXT,
     release_date TEXT,
@@ -80,7 +80,7 @@ def get_connection():
 
 
 # Stored in the database file, so an older library can be upgraded when the app starts.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 # Version 0 only allowed ratings of 0.5 and up. SQLite can't edit a CHECK rule in place, so each table
@@ -239,6 +239,14 @@ def _upgrade_to_version_5():
         connection.execute("ALTER TABLE library_items RENAME COLUMN tmdb_id TO source_id")
 
 
+# Version 5 called creators artists, from when only music had them. Books need authors there too.
+def _upgrade_to_version_6():
+    path = _db_path()
+    shutil.copy2(path, f"{path}-before-creators-rename")
+    with get_connection() as connection:
+        connection.execute("ALTER TABLE library_items RENAME COLUMN artists TO creators")
+
+
 def init_db():
     with get_connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -256,6 +264,8 @@ def init_db():
         _upgrade_to_version_4()
     if has_library and version < 5:
         _upgrade_to_version_5()
+    if has_library and version < 6:
+        _upgrade_to_version_6()
 
     with get_connection() as connection:
         connection.executescript(SCHEMA)

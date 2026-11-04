@@ -679,7 +679,7 @@ export default function MediaDetail({
             <div className={`${imageClass} detail-release-image--placeholder`}>No Image</div>
           )}
           <h2>{item.title}</h2>
-          <p className="detail-release-artist">{item.artists || TYPE_LABELS[item.media_type]}</p>
+          <p className="detail-release-artist">{item.creators || TYPE_LABELS[item.media_type]}</p>
           {item.album_title && <p className="detail-release-year">{item.album_title}</p>}
           <div className="movie-meta">
             {item.vote_count > 0 && (

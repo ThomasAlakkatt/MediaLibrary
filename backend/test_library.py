@@ -411,7 +411,7 @@ def test_upgrade_removes_season_ratings_and_keeps_the_rest(tmp_path, monkeypatch
     connection = sqlite3.connect(tmp_path / "v1.db")
     columns = [row[1] for row in connection.execute("PRAGMA table_info(season_logs)")]
     assert columns == ["item_id", "season_number", "status", "finished_on"]
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
     connection.close()
 
 
@@ -653,7 +653,7 @@ def test_a_shows_own_status_beats_its_seasons_in_the_filter(client):
     assert library_titles(client, status="want") == ["Breaking Bad"]
 
 
-ALBUM = {"title": "OK Computer", "artists": "Radiohead", "year": "1997", "poster_path": "https://img/ok.jpg"}
+ALBUM = {"title": "OK Computer", "creators": "Radiohead", "year": "1997", "poster_path": "https://img/ok.jpg"}
 TRACKS = [{"track_index": 0, "title": "Airbag"}, {"track_index": 6, "title": "Karma Police"}]
 
 
@@ -672,7 +672,7 @@ def test_an_album_is_logged_like_a_movie(client):
     )
     assert response.status_code == 200
     item = client.get("/library/album/21491").json()
-    assert (item["media_type"], item["title"], item["artists"], item["rating"]) == (
+    assert (item["media_type"], item["title"], item["creators"], item["rating"]) == (
         "album",
         "OK Computer",
         "Radiohead",
@@ -696,7 +696,7 @@ def test_each_selected_song_becomes_its_own_entry(client):
     for song in songs:
         assert song["media_type"] == "song"
         assert song["album_title"] == "OK Computer"
-        assert song["artists"] == "Radiohead"
+        assert song["creators"] == "Radiohead"
         assert (song["status"], song["rating"], song["review"]) == ("finished", 9, "Great")
         assert song["finished_on"] == "2026-11-01"
     assert sorted(library_titles(client)) == ["Airbag", "Karma Police"]
@@ -721,7 +721,7 @@ def test_saving_a_logged_song_again_replaces_its_log(client):
 
 def test_a_song_can_be_changed_and_cleared_alone(client):
     save_songs(client, rating=9)
-    body = {"title": "Airbag", "album_title": "OK Computer", "artists": "Radiohead", "rating": 4}
+    body = {"title": "Airbag", "album_title": "OK Computer", "creators": "Radiohead", "rating": 4}
     assert client.put("/library/song/21491/0", json=body).json()["rating"] == 4
     assert client.get("/library/song/21491/6").json()["rating"] == 9
 
@@ -957,3 +957,14 @@ def test_upgrade_renames_the_id_column_and_keeps_the_data(tmp_path, monkeypatch)
     backup = sqlite3.connect(f"{tmp_path / 'v1.db'}-before-source-id-rename")
     assert backup.execute("SELECT tmdb_id FROM library_items").fetchone()[0] == 2
     backup.close()
+
+
+def test_upgrade_renames_artists_to_creators_and_keeps_the_data(tmp_path, monkeypatch):
+    make_version_1_database(tmp_path / "v1.db", monkeypatch, "")
+    with upgraded_client() as client:
+        client.put("/library/album/5", json={**ALBUM, "rating": 1})
+        assert client.get("/library/album/5").json()["creators"] == "Radiohead"
+    connection = sqlite3.connect(tmp_path / "v1.db")
+    columns = [row[1] for row in connection.execute("PRAGMA table_info(library_items)")]
+    assert "creators" in columns and "artists" not in columns
+    connection.close()

@@ -68,7 +68,7 @@ export default function MediaCard({ item, onSelect, children }) {
       <div className="result-info">
         <h2>{item.title}</h2>
         <p className="result-artist">{TYPE_LABELS[item.media_type]}</p>
-        {item.artists && <p className="result-year">{item.artists}</p>}
+        {item.creators && <p className="result-year">{item.creators}</p>}
         {item.album_title && <p className="result-year">{item.album_title}</p>}
         {item.year && <p className="result-year">{item.year}</p>}
         {children}

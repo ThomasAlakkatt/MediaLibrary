@@ -1195,7 +1195,7 @@ describe('shows logged only by season', () => {
 
 describe('album pages', () => {
   const albumLibraryItem = (overrides = {}) =>
-    libraryItem({ id: 60, source_id: 9, media_type: 'album', title: 'OK Computer', artists: 'Radiohead', ...overrides });
+    libraryItem({ id: 60, source_id: 9, media_type: 'album', title: 'OK Computer', creators: 'Radiohead', ...overrides });
   const songItem = (trackIndex, title, overrides = {}) =>
     libraryItem({
       id: 70 + trackIndex,
@@ -1204,7 +1204,7 @@ describe('album pages', () => {
       track_index: trackIndex,
       title,
       album_title: 'OK Computer',
-      artists: 'Radiohead',
+      creators: 'Radiohead',
       ...overrides,
     });
 
@@ -1269,7 +1269,7 @@ describe('album pages', () => {
     expect(url).toMatch(/\/library\/album\/9$/);
     expect(body).toMatchObject({
       title: 'OK Computer',
-      artists: 'Radiohead',
+      creators: 'Radiohead',
       status: 'finished',
       rating: 9.25,
       review: 'Great',
@@ -1313,7 +1313,7 @@ describe('album pages', () => {
     expect(body).toMatchObject({
       title: 'Airbag',
       album_title: 'OK Computer',
-      artists: 'Radiohead',
+      creators: 'Radiohead',
       status: 'finished',
       rating: 9,
     });
@@ -1441,7 +1441,7 @@ describe('album pages', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Favorites' })).toBeChecked());
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringContaining('/shelves/5/items'),
-      expect.objectContaining({ media_type: 'album', source_id: 9, artists: 'Radiohead' })
+      expect.objectContaining({ media_type: 'album', source_id: 9, creators: 'Radiohead' })
     );
   });
 
@@ -1784,9 +1784,9 @@ describe('searching lists', () => {
   const title = (id, name, overrides = {}) => libraryItem({ id, source_id: id, title: name, ...overrides });
   const MIXED = [
     title(1, 'Dune'),
-    title(2, 'Airbag', { media_type: 'song', artists: 'Radiohead', album_title: 'OK Computer' }),
-    title(3, 'OK Computer', { media_type: 'album', artists: 'Radiohead' }),
-    title(4, 'Ágætis byrjun', { media_type: 'album', artists: 'Sigur Rós' }),
+    title(2, 'Airbag', { media_type: 'song', creators: 'Radiohead', album_title: 'OK Computer' }),
+    title(3, 'OK Computer', { media_type: 'album', creators: 'Radiohead' }),
+    title(4, 'Ágætis byrjun', { media_type: 'album', creators: 'Sigur Rós' }),
   ];
   const many = (count) => Array.from({ length: count }, (_, i) => title(i + 1, `Title ${i + 1}`));
 
