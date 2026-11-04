@@ -118,12 +118,25 @@ def search_releases(
     if not artist_name and not releaseTitle:
         return []
 
-    return _search_masters(
-        [],
-        {"artist": artist_name, "release_title": releaseTitle, "type": music_type},
-        number_of_results,
-        page_number,
-    )
+    fields = {"artist": artist_name, "release_title": releaseTitle, "type": music_type}
+
+    # Discogs sorts by how many people own each release, so the first batch holds the best-known ones.
+    # Only that batch gets ranked further. Pages past it carry on in Discogs' order, so an artist with
+    # hundreds of releases can still be paged through to the end.
+    start = (page_number - 1) * number_of_results
+    if start >= CANDIDATES_PER_SEARCH:
+        discogs_page = start // CANDIDATES_PER_SEARCH + 1
+        results = _search_masters([], fields, CANDIDATES_PER_SEARCH, discogs_page, most_owned_first=True)
+        offset = start % CANDIDATES_PER_SEARCH
+        return results[offset : offset + number_of_results]
+
+    cache_key = ("fields", artist_name.casefold(), releaseTitle.casefold(), music_type)
+    ranked = _cached_results(cache_key)
+    if ranked is None:
+        candidates = _search_masters([], fields, CANDIDATES_PER_SEARCH, 1, most_owned_first=True)
+        ranked = _rank_field_matches(artist_name, releaseTitle, candidates)
+        _search_cache[cache_key] = {"time": time.monotonic(), "results": ranked}
+    return ranked[start : start + number_of_results]
 
 
 # How many results to compare from each search. 100 is the most Discogs returns at once.
@@ -133,6 +146,13 @@ CANDIDATES_PER_SEARCH = 100
 # a minute, so the ranked list for a search is kept for a while.
 SEARCH_CACHE_SECONDS = 600
 _search_cache = {}
+
+
+def _cached_results(cache_key):
+    cached = _search_cache.get(cache_key)
+    if cached and time.monotonic() - cached["time"] < SEARCH_CACHE_SECONDS:
+        return cached["results"]
+    return None
 
 
 # Makes names comparable by ignoring case, accents, spacing and punctuation, so "radio head" and
@@ -198,6 +218,36 @@ def _rank_candidates(query, candidates):
     return [{**release, "match": MATCH_LABELS.get(rank)} for rank, release in ranked]
 
 
+# Orders an artist and/or release search: releases by that exact artist with that exact title first,
+# with the most-owned first among equally good matches. Anything else stays in the order it came in.
+def _rank_field_matches(artist_name, release_title, candidates):
+    artist_key = _match_key(re.sub(r"^the\s+", "", artist_name, flags=re.IGNORECASE))
+    title_key = _match_key(release_title)
+
+    def match_strength(release):
+        artist_matches = bool(artist_key) and any(
+            artist_key in _artist_keys(artist) for artist in release["artists"]
+        )
+        release_key = _match_key(release["title"])
+        if not title_key:
+            title_strength = 0
+        elif release_key == title_key:
+            title_strength = 2
+        else:
+            title_strength = 1 if title_key in release_key else 0
+        return (artist_matches, title_strength)
+
+    def sort_key(release):
+        strength = match_strength(release)
+        return (
+            not strength[0],
+            -strength[1],
+            -release["popularity"] if any(strength) else 0,
+        )
+
+    return sorted(candidates, key=sort_key)
+
+
 # Searches from a single piece of text, like "radiohead" or "radiohead ok computer". A general Discogs
 # search buries an artist's own releases under anything with their name in the title, so this also
 # searches by artist and by title, then ranks all of it.
@@ -207,20 +257,22 @@ def search_music_text(query, number_of_results=10, page_number=1, music_type="ma
         return []
 
     cache_key = (query.casefold(), music_type)
-    cached = _search_cache.get(cache_key)
-    if cached and time.monotonic() - cached["time"] < SEARCH_CACHE_SECONDS:
-        ranked = cached["results"]
-    else:
+    ranked = _cached_results(cache_key)
+    if ranked is None:
+        # Only the general search stays in Discogs' relevance order, since that's what makes a search
+        # like "radiohead ok computer" work. The others would otherwise miss an artist's biggest albums.
         searches = [
-            ([query], {"type": music_type}),
-            ([], {"artist": query, "type": music_type}),
-            ([], {"release_title": query, "type": music_type}),
+            ([query], {"type": music_type}, False),
+            ([], {"artist": query, "type": music_type}, True),
+            ([], {"release_title": query, "type": music_type}, True),
         ]
         candidates = []
         errors = []
 
         def run_search(search):
-            return _search_masters(search[0], search[1], CANDIDATES_PER_SEARCH, 1)
+            return _search_masters(
+                search[0], search[1], CANDIDATES_PER_SEARCH, 1, most_owned_first=search[2]
+            )
 
         with ThreadPoolExecutor(max_workers=len(searches)) as executor:
             futures = [executor.submit(run_search, search) for search in searches]
@@ -243,12 +295,14 @@ def search_music_text(query, number_of_results=10, page_number=1, music_type="ma
     return ranked[start : start + number_of_results]
 
 
-def _search_masters(query, fields, number_of_results, page_number):
+def _search_masters(query, fields, number_of_results, page_number, most_owned_first=False):
     # client.search() only builds the query, the request itself is sent by .page(), so .page() has to be
     # inside the try. Page size is set on the list object because the library appends its own page and
     # per_page values to the URL, which would otherwise conflict with any passed to client.search().
     try:
         search_results = client.search(*query, **fields)
+        if most_owned_first:
+            search_results.sort("have", "desc")
         search_results.per_page = number_of_results
         page_results = search_results.page(page_number)
     except HTTPError as e:

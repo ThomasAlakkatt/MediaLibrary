@@ -198,3 +198,106 @@ def test_a_much_more_popular_exact_title_beats_a_small_artist(client, monkeypatc
     )
     response = client.get("/search/music", params={"query": "abbey road"})
     assert titles(response) == [("The Beatles", "Abbey Road"), ("Abbey Road", "Easy")]
+
+
+def artist_search(client, artist="", title="", page=1):
+    return client.get("/search", params={"artist": artist, "title": title, "page": page})
+
+
+def test_music_tab_puts_the_artists_most_owned_releases_first(client, monkeypatch):
+    fake_discogs(
+        monkeypatch,
+        results=[
+            release(1, "Radiohead - Street Spirit", have=7176),
+            release(2, "Radiohead Tribute Band - Covers", have=90000),
+            release(3, "Radiohead - OK Computer", have=285572),
+            release(4, "The Radiohead Experience - Live", have=5),
+        ],
+    )
+    assert titles(artist_search(client, artist="radiohead")) == [
+        ("Radiohead", "OK Computer"),
+        ("Radiohead", "Street Spirit"),
+        ("Radiohead Tribute Band", "Covers"),
+        ("The Radiohead Experience", "Live"),
+    ]
+
+
+def test_music_tab_title_search_puts_exact_titles_first(client, monkeypatch):
+    fake_discogs(
+        monkeypatch,
+        results=[
+            release(1, "Someone - Unrelated", have=500000),
+            release(2, "Various - Abbey Road Revisited", have=90000),
+            release(3, "Tiny - Abbey Road", have=5),
+            release(4, "The Beatles - Abbey Road", have=535124),
+        ],
+    )
+    assert titles(artist_search(client, title="abbey road")) == [
+        ("The Beatles", "Abbey Road"),
+        ("Tiny", "Abbey Road"),
+        ("Various", "Abbey Road Revisited"),
+        ("Someone", "Unrelated"),
+    ]
+
+
+def test_music_tab_artist_and_title_together(client, monkeypatch):
+    fake_discogs(
+        monkeypatch,
+        results=[
+            release(1, "Radiohead - Creep (Live)", have=90000),
+            release(2, "TLC - Creep", have=500000),
+            release(3, "Radiohead - The Bends", have=147603),
+            release(4, "Radiohead - Creep", have=9176),
+        ],
+    )
+    assert titles(artist_search(client, artist="Radiohead", title="Creep")) == [
+        ("Radiohead", "Creep"),
+        ("Radiohead", "Creep (Live)"),
+        ("Radiohead", "The Bends"),
+        ("TLC", "Creep"),
+    ]
+
+
+def test_music_tab_pages_through_the_ranked_list_with_one_request(client, monkeypatch):
+    many = [release(i, f"Radiohead - Album {i}", have=i) for i in range(1, 26)]
+    urls = fake_discogs(monkeypatch, results=many)
+
+    first = artist_search(client, artist="radiohead").json()
+    second = artist_search(client, artist="radiohead", page=2).json()
+    third = artist_search(client, artist="radiohead", page=3).json()
+    past_the_end = artist_search(client, artist="radiohead", page=4).json()
+
+    assert first[0]["title"] == "Album 25"
+    assert second[0]["title"] == "Album 15"
+    assert (len(first), len(second), len(third), past_the_end) == (10, 10, 5, [])
+    assert len(urls) == 1
+
+
+def test_music_tab_can_page_past_the_ranked_batch(client, monkeypatch):
+    many = [release(i, f"Radiohead - Album {i}", have=i) for i in range(1, 101)]
+    urls = fake_discogs(monkeypatch, results=many)
+
+    response = artist_search(client, artist="radiohead", page=12).json()
+
+    assert "page=2" in urls[0]
+    assert [item["title"] for item in response] == [f"Album {i}" for i in range(11, 21)]
+
+
+def test_music_tab_failures_are_reported_and_not_kept(client, monkeypatch):
+    fake_discogs(monkeypatch, status=429)
+    assert artist_search(client, artist="x").status_code == 429
+    fake_discogs(monkeypatch, results=[RESULT])
+    assert artist_search(client, artist="x").status_code == 200
+
+
+def test_artist_and_title_searches_ask_for_the_most_owned_first(client, monkeypatch):
+    urls = fake_discogs(monkeypatch, results=[RESULT])
+    client.get("/search/music", params={"query": "ok computer"})
+    sorted_by_owners = {search_kind(url): "sort=have&sort_order=desc" in url for url in urls}
+    assert sorted_by_owners == {"general": False, "artist": True, "title": True}
+
+
+def test_music_tab_asks_for_the_most_owned_first(client, monkeypatch):
+    urls = fake_discogs(monkeypatch, results=[RESULT])
+    artist_search(client, artist="radiohead")
+    assert "sort=have&sort_order=desc" in urls[0]
