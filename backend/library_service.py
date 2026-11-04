@@ -290,29 +290,6 @@ def save_log(media_type, source_id, details, log, track_index=-1):
         return _load_item(connection, media_type, source_id, track_index)
 
 
-# Saves the same log to each song in tracks, all or nothing, where each becomes its own entry.
-def save_songs_log(album_id, album_details, tracks, log):
-    with get_connection() as connection:
-        for track in tracks:
-            details = {
-                **album_details,
-                "title": track["title"],
-                "album_title": album_details["title"],
-                "overview": None,
-            }
-            item_id = _ensure_item(connection, "song", album_id, details, track["track_index"])
-            connection.execute(
-                """
-                UPDATE library_items
-                SET status = ?, rating = ?, review = ?, finished_on = ?, updated_at = datetime('now')
-                WHERE id = ?
-                """,
-                (*(log.get(field) for field in LOG_FIELDS), item_id),
-            )
-            _prune_item(connection, item_id)
-    return list_album_songs(album_id)
-
-
 # The songs from an album that are in the library, in tracklist order.
 def list_album_songs(album_id):
     with get_connection() as connection:

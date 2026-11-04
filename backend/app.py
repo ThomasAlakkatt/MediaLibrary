@@ -147,16 +147,6 @@ class SeasonLogRequest(TitleDetails):
     finished_on: Optional[date] = None
 
 
-class SongTrack(BaseModel):
-    track_index: int = Field(ge=0)
-    title: str = Field(min_length=1)
-
-
-# TitleDetails here describes the album, with the songs being logged listed in tracks.
-class SongsLogRequest(LogRequest):
-    tracks: list[SongTrack] = Field(min_length=1)
-
-
 class ShelfItemRequest(TitleDetails):
     media_type: MediaType
     source_id: int
@@ -250,14 +240,6 @@ def library(
 @app.get("/library/album/{album_id}/songs")
 def album_songs(album_id: int):
     return library_service.list_album_songs(album_id)
-
-
-# Saves one log to each song listed, where each becomes its own entry in the library.
-@app.put("/library/album/{album_id}/songs")
-def save_songs_log(album_id: int, body: SongsLogRequest):
-    details, log = _split_details(body, ("status", "rating", "review", "finished_on"))
-    tracks = [track.model_dump() for track in body.tracks]
-    return library_service.save_songs_log(album_id, details, tracks, log)
 
 
 @app.get("/library/song/{album_id}/{track_index}")

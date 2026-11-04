@@ -1276,41 +1276,104 @@ describe('album pages', () => {
     });
   });
 
-  test('logging chosen songs saves them together and goes to My Library', async () => {
-    axios.put.mockResolvedValue({ data: [] });
-    await chooseSongs('Airbag', 'Karma Police');
-    expect(screen.getByText(/2 songs selected/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  function entryFor(title) {
+    return within(screen.getByRole('form', { name: `Log for ${title}` }));
+  }
 
-    expect(await screen.findByRole('region', { name: 'my library' })).toBeInTheDocument();
-    const [url, body] = axios.put.mock.calls[0];
-    expect(url).toMatch(/\/library\/album\/9\/songs$/);
-    expect(body.tracks).toEqual([
-      { track_index: 0, title: 'Airbag' },
-      { track_index: 2, title: 'Karma Police' },
-    ]);
-    expect(body).toMatchObject({ title: 'OK Computer', artists: 'Radiohead', rating: 9 });
+  test('each ticked song gets its own entry box, tied to it', async () => {
+    await chooseSongs('Airbag', 'Karma Police');
+    const airbagRow = screen.getByRole('form', { name: 'Log for Airbag' }).closest('li');
+    expect(within(airbagRow).getByText('Airbag')).toBeInTheDocument();
+    expect(within(airbagRow).queryByText('Karma Police')).not.toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Log for Karma Police' })).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Log for Paranoid Android' })).not.toBeInTheDocument();
   });
 
-  test('saving needs at least one song chosen', async () => {
-    await chooseSongs();
-    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  test('entry boxes keep their own fields apart', async () => {
+    await chooseSongs('Airbag', 'Karma Police');
+    fireEvent.change(entryFor('Airbag').getByLabelText('My rating'), { target: { value: '9' } });
+    expect(entryFor('Karma Police').getByLabelText('My rating')).toHaveValue('');
+    const ids = [...document.querySelectorAll('[id]')].map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 
-    expect(await screen.findByText('Choose at least one song to log.')).toBeInTheDocument();
+  test('saving one song only saves that song and stays on the page', async () => {
+    const saved = songItem(0, 'Airbag', { rating: 9, status: 'finished' });
+    axios.put.mockResolvedValue({ data: saved });
+    await chooseSongs('Airbag', 'Karma Police');
+    fireEvent.change(entryFor('Karma Police').getByLabelText('Review'), { target: { value: 'Still typing' } });
+    fireEvent.change(entryFor('Airbag').getByLabelText('Status'), { target: { value: 'finished' } });
+    fireEvent.change(entryFor('Airbag').getByLabelText('My rating'), { target: { value: '9' } });
+    fireEvent.click(entryFor('Airbag').getByRole('button', { name: 'Save' }));
+
+    expect(await entryFor('Airbag').findByText('Saved')).toBeInTheDocument();
+    expect(axios.put).toHaveBeenCalledTimes(1);
+    const [url, body] = axios.put.mock.calls[0];
+    expect(url).toMatch(/\/library\/song\/9\/0$/);
+    expect(body).toMatchObject({
+      title: 'Airbag',
+      album_title: 'OK Computer',
+      artists: 'Radiohead',
+      status: 'finished',
+      rating: 9,
+    });
+    expect(screen.getByRole('region', { name: 'album detail' })).toBeInTheDocument();
+    expect(window.location.search).not.toContain('view=library');
+    expect(entryFor('Karma Police').getByLabelText('Review')).toHaveValue('Still typing');
+    expect(screen.getByText('✓ Listened · ★ 9')).toBeInTheDocument();
+  });
+
+  test('songs can each be saved in turn with different logs', async () => {
+    axios.put
+      .mockResolvedValueOnce({ data: songItem(0, 'Airbag', { rating: 9 }) })
+      .mockResolvedValueOnce({ data: songItem(2, 'Karma Police', { rating: 7.5 }) });
+    await chooseSongs('Airbag', 'Karma Police');
+    fireEvent.change(entryFor('Airbag').getByLabelText('My rating'), { target: { value: '9' } });
+    fireEvent.click(entryFor('Airbag').getByRole('button', { name: 'Save' }));
+    await entryFor('Airbag').findByText('Saved');
+
+    fireEvent.change(entryFor('Karma Police').getByLabelText('My rating'), { target: { value: '7.5' } });
+    fireEvent.click(entryFor('Karma Police').getByRole('button', { name: 'Save' }));
+    await entryFor('Karma Police').findByText('Saved');
+
+    expect(axios.put.mock.calls.map(([url, body]) => [url.split('/').pop(), body.rating])).toEqual([
+      ['0', 9],
+      ['2', 7.5],
+    ]);
+  });
+
+  test('a failed save stays on that song with its error', async () => {
+    axios.put.mockRejectedValue({ response: { status: 500, data: {} } });
+    await chooseSongs('Airbag', 'Karma Police');
+    fireEvent.change(entryFor('Airbag').getByLabelText('My rating'), { target: { value: '9' } });
+    fireEvent.click(entryFor('Airbag').getByRole('button', { name: 'Save' }));
+
+    expect(await entryFor('Airbag').findByText(/Something went wrong saving your log/)).toBeInTheDocument();
+    expect(entryFor('Karma Police').queryByText(/Something went wrong/)).not.toBeInTheDocument();
+    expect(entryFor('Airbag').getByLabelText('My rating')).toHaveValue('9');
+  });
+
+  test('an empty entry box asks for something before saving', async () => {
+    await chooseSongs('Airbag');
+    fireEvent.click(entryFor('Airbag').getByRole('button', { name: 'Save' }));
+    expect(await entryFor('Airbag').findByText('Add a status, rating or review before saving.')).toBeInTheDocument();
     expect(axios.put).not.toHaveBeenCalled();
   });
 
-  test('unticking a song leaves it out', async () => {
-    axios.put.mockResolvedValue({ data: [] });
-    await chooseSongs('Airbag', 'Karma Police');
+  test('unticking hides the box and keeps what was typed', async () => {
+    await chooseSongs('Airbag');
+    fireEvent.change(entryFor('Airbag').getByLabelText('Review'), { target: { value: 'Keep me' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /Airbag/ }));
-    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '9' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.queryByRole('form', { name: 'Log for Airbag' })).not.toBeInTheDocument();
 
-    await waitFor(() => expect(axios.put).toHaveBeenCalled());
-    expect(axios.put.mock.calls[0][1].tracks).toEqual([{ track_index: 2, title: 'Karma Police' }]);
+    fireEvent.click(screen.getByRole('checkbox', { name: /Airbag/ }));
+    expect(entryFor('Airbag').getByLabelText('Review')).toHaveValue('Keep me');
+  });
+
+  test('before ticking, a hint explains what to do', async () => {
+    await chooseSongs();
+    expect(screen.getByText(/Tick a song to open its entry box/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('My rating')).not.toBeInTheDocument();
   });
 
   test('an existing album log fills the form', async () => {
@@ -1326,38 +1389,46 @@ describe('album pages', () => {
     expect(await screen.findByText('✓ Listened · ★ 9')).toBeInTheDocument();
   });
 
-  test('choosing one logged song opens its log, and it can be cleared', async () => {
-    setRoutes({ albumSongs: [songItem(2, 'Karma Police', { status: 'finished', rating: 9 })] });
+  test('a logged song opens with its log, and can be cleared on its own', async () => {
+    setRoutes({
+      albumSongs: [
+        songItem(2, 'Karma Police', { status: 'finished', rating: 9 }),
+        songItem(0, 'Airbag', { rating: 4 }),
+      ],
+    });
     axios.delete.mockResolvedValue({ data: null });
-    await chooseSongs('Karma Police');
-    expect(screen.getByLabelText('My rating')).toHaveValue('9');
+    await chooseSongs('Karma Police', 'Airbag');
+    expect(entryFor('Karma Police').getByLabelText('My rating')).toHaveValue('9');
+    expect(entryFor('Airbag').getByLabelText('My rating')).toHaveValue('4');
 
-    setRoutes({ albumSongs: [] });
-    fireEvent.click(screen.getByRole('button', { name: 'Clear log' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, clear' }));
+    fireEvent.click(entryFor('Karma Police').getByRole('button', { name: 'Clear log' }));
+    fireEvent.click(entryFor('Karma Police').getByRole('button', { name: 'Yes, clear' }));
 
     await waitFor(() =>
       expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/library\/song\/9\/2$/))
     );
     await waitFor(() => expect(screen.queryByText('✓ Listened · ★ 9')).not.toBeInTheDocument());
+    expect(entryFor('Airbag').getByLabelText('My rating')).toHaveValue('4');
   });
 
-  test('saving over logged songs warns first', async () => {
-    setRoutes({ albumSongs: [songItem(0, 'Airbag', { rating: 5 })] });
-    await chooseSongs('Airbag', 'Karma Police');
-    expect(screen.getByText(/1 of these is already logged. Saving replaces its log./)).toBeInTheDocument();
-  });
-
-  test('switching to whole album keeps the chosen songs out of it', async () => {
+  test('switching to whole album shows its one form, and switching back keeps entries', async () => {
     axios.put.mockResolvedValue({ data: albumLibraryItem({ rating: 8 }) });
     await chooseSongs('Airbag');
+    fireEvent.change(entryFor('Airbag').getByLabelText('Review'), { target: { value: 'Keep me' } });
     fireEvent.click(screen.getByRole('radio', { name: 'Whole album' }));
-    fireEvent.change(screen.getByLabelText('My rating'), { target: { value: '8' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.queryByRole('form', { name: 'Log for Airbag' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Choose songs' }));
+    expect(entryFor('Airbag').getByLabelText('Review')).toHaveValue('Keep me');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Whole album' }));
+    const albumForm = within(screen.getByRole('form', { name: 'Log for the whole album' }));
+    fireEvent.change(albumForm.getByLabelText('My rating'), { target: { value: '8' } });
+    fireEvent.click(albumForm.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(axios.put).toHaveBeenCalled());
     expect(axios.put.mock.calls[0][0]).toMatch(/\/library\/album\/9$/);
-    expect(axios.put.mock.calls[0][1].tracks).toBeUndefined();
+    expect(await screen.findByRole('region', { name: 'my library' })).toBeInTheDocument();
   });
 
   test('the whole album can go on a shelf', async () => {

@@ -76,9 +76,9 @@ function draftFromLog(log) {
   };
 }
 
-// saveLog and clearLog replace the usual requests, for logs that aren't saved to the title itself.
-// blockedMessage explains why saving isn't possible yet.
-export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog, blockedMessage }) {
+// Several forms can share a page, so idPrefix keeps their fields apart and formLabel says what each is
+// for. Without onLogSubmitted, saving stays on the page and says so.
+export function LogForm({ item, log, onSaved, onLogSubmitted, idPrefix = 'log', formLabel }) {
   const [draft, setDraft] = useState(() => draftFromLog(log));
   // True while the date is still the automatic one, rather than one that was saved or picked.
   const [dateIsDefault, setDateIsDefault] = useState(() => isNewEntry(log));
@@ -113,11 +113,6 @@ export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog,
 
   async function handleSave(event) {
     event.preventDefault();
-    if (blockedMessage) {
-      setError(blockedMessage);
-      return;
-    }
-
     const rating = parseRating(draft.rating);
     if (rating === undefined) {
       setError(INVALID_RATING_MESSAGE);
@@ -134,17 +129,17 @@ export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog,
     setError(null);
     setMessage(null);
     try {
-      const logFields = {
+      const response = await axios.put(logUrl(item), {
+        ...titleDetails(item),
         status: draft.status,
         rating,
         review: draft.review,
         finished_on: draft.finished_on || null,
-      };
-      const response = saveLog
-        ? await saveLog(logFields)
-        : await axios.put(logUrl(item), { ...titleDetails(item), ...logFields });
+      });
       onSaved(response.data);
-      onLogSubmitted();
+      setDateIsDefault(false);
+      if (onLogSubmitted) onLogSubmitted();
+      else setMessage('Saved');
     } catch (err) {
       setError(getErrorMessage(err, 'Something went wrong saving your log. Please try again.'));
     } finally {
@@ -157,7 +152,7 @@ export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog,
     setError(null);
     setMessage(null);
     try {
-      const response = clearLog ? await clearLog() : await axios.delete(logUrl(item));
+      const response = await axios.delete(logUrl(item));
       onSaved(response.data);
       setDraft(newDraft());
       setDateIsDefault(true);
@@ -171,29 +166,29 @@ export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog,
   }
 
   return (
-    <form className="log-form" onSubmit={handleSave}>
+    <form className="log-form" aria-label={formLabel} onSubmit={handleSave}>
       <div className="log-fields">
         <div className="log-field">
-          <label htmlFor="log-status">Status</label>
+          <label htmlFor={`${idPrefix}-status`}>Status</label>
           <StatusSelect
-            id="log-status"
+            id={`${idPrefix}-status`}
             mediaType={item.media_type}
             value={draft.status}
             onChange={handleStatusChange}
           />
         </div>
         <div className="log-field">
-          <label htmlFor="log-rating">My rating</label>
+          <label htmlFor={`${idPrefix}-rating`}>My rating</label>
           <RatingInput
-            id="log-rating"
+            id={`${idPrefix}-rating`}
             value={draft.rating}
             onChange={(rating) => updateDraft({ rating })}
           />
         </div>
         <div className="log-field">
-          <label htmlFor="log-finished">Date finished</label>
+          <label htmlFor={`${idPrefix}-finished`}>Date finished</label>
           <input
-            id="log-finished"
+            id={`${idPrefix}-finished`}
             type="date"
             value={draft.finished_on}
             onChange={(event) => {
@@ -204,9 +199,9 @@ export function LogForm({ item, log, onSaved, onLogSubmitted, saveLog, clearLog,
         </div>
       </div>
       <div className="log-field">
-        <label htmlFor="log-review">Review</label>
+        <label htmlFor={`${idPrefix}-review`}>Review</label>
         <textarea
-          id="log-review"
+          id={`${idPrefix}-review`}
           rows="4"
           value={draft.review}
           onChange={(event) => updateDraft({ review: event.target.value })}

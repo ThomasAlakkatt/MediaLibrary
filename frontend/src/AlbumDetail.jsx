@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { API_URL, externalLink, getErrorMessage, logUrl, posterUrl, titleDetails } from './api';
+import { API_URL, externalLink, getErrorMessage, posterUrl } from './api';
 import { Clapperboard } from './Loaders';
 import { LoggedBadge } from './MediaCard';
 import { LogForm, ShelfPicker } from './MediaDetail';
 
-// An album's page: log the whole album as one entry, or pick songs to each get an entry of their own.
+// An album's page: log the whole album as one entry, or tick songs to each get an entry box of their own.
 export default function AlbumDetail({
   item,
   onBack,
@@ -20,6 +20,8 @@ export default function AlbumDetail({
   const [logError, setLogError] = useState(null);
   const [mode, setMode] = useState('album');
   const [selectedIndexes, setSelectedIndexes] = useState([]);
+  // Entry boxes stay mounted once opened, so unticking a song or switching modes keeps what was typed.
+  const [openedIndexes, setOpenedIndexes] = useState([]);
 
   useEffect(() => {
     let current = true;
@@ -71,14 +73,11 @@ export default function AlbumDetail({
   };
   const tracks = album?.tracks ?? [];
   const songLogs = Object.fromEntries(songs.map((song) => [song.track_index, song]));
-  const selectedTracks = tracks.filter((track) => selectedIndexes.includes(track.track_index));
-  const loggedSelected = selectedTracks.filter((track) => songLogs[track.track_index]);
-
-  // One logged song opens its log for editing. Several are saved together with what's typed here.
-  const singleSongLog =
-    selectedTracks.length === 1 ? songLogs[selectedTracks[0].track_index] ?? null : null;
 
   function toggleTrack(trackIndex) {
+    setOpenedIndexes((previous) =>
+      previous.includes(trackIndex) ? previous : [...previous, trackIndex]
+    );
     setSelectedIndexes((previous) =>
       previous.includes(trackIndex)
         ? previous.filter((index) => index !== trackIndex)
@@ -86,22 +85,26 @@ export default function AlbumDetail({
     );
   }
 
-  async function saveSongs(log) {
-    const response = await axios.put(`${API_URL}/library/album/${item.id}/songs`, {
-      ...titleDetails(details),
-      tracks: selectedTracks.map(({ track_index, title }) => ({ track_index, title })),
-      ...log,
-    });
-    setSongs(response.data);
-    return response;
+  function updateSongLog(trackIndex, savedLog) {
+    setSongs((previous) => [
+      ...previous.filter((song) => song.track_index !== trackIndex),
+      ...(savedLog ? [savedLog] : []),
+    ]);
   }
 
-  async function clearSong() {
-    const songUrl = logUrl({ media_type: 'song', id: item.id, track_index: singleSongLog.track_index });
-    await axios.delete(songUrl);
-    const response = await axios.get(`${API_URL}/library/album/${item.id}/songs`);
-    setSongs(response.data);
-    return { data: null };
+  // A song's own details for its entry, with the album's filling in the rest.
+  function songItem(track) {
+    return {
+      media_type: 'song',
+      id: item.id,
+      track_index: track.track_index,
+      title: track.title,
+      album_title: details.title,
+      artists: details.artists,
+      year: details.year,
+      release_date: details.release_date,
+      poster_path: details.poster_path,
+    };
   }
 
   return (
@@ -182,8 +185,12 @@ export default function AlbumDetail({
                           {trackLog && <LoggedBadge log={trackLog} />}
                         </>
                       );
+                      const entryOpen = mode === 'songs' && selectedIndexes.includes(track.track_index);
                       return (
-                        <li key={track.track_index} className="track-row">
+                        <li
+                          key={track.track_index}
+                          className={`track-row${entryOpen ? ' track-row--open' : ''}`}
+                        >
                           {mode === 'songs' ? (
                             <label className="track-content">
                               <input
@@ -196,6 +203,17 @@ export default function AlbumDetail({
                           ) : (
                             <div className="track-content">{content}</div>
                           )}
+                          {openedIndexes.includes(track.track_index) && (
+                            <div className="track-entry" hidden={!entryOpen}>
+                              <LogForm
+                                item={songItem(track)}
+                                log={trackLog ?? null}
+                                idPrefix={`song-${track.track_index}`}
+                                formLabel={`Log for ${track.title}`}
+                                onSaved={(savedLog) => updateSongLog(track.track_index, savedLog)}
+                              />
+                            </div>
+                          )}
                         </li>
                       );
                     })}
@@ -203,44 +221,23 @@ export default function AlbumDetail({
                 )}
               </section>
 
-              {mode === 'songs' && (
+              {mode === 'songs' && selectedIndexes.length === 0 && (
                 <p className="media-detail-facts">
-                  {selectedTracks.length === 0
-                    ? 'Tick the songs to log. Each one gets its own entry.'
-                    : `${selectedTracks.length} ${selectedTracks.length === 1 ? 'song' : 'songs'} selected. ${
-                        selectedTracks.length === 1 ? 'It gets' : 'Each one gets'
-                      } its own entry.`}
-                </p>
-              )}
-              {mode === 'songs' && selectedTracks.length > 1 && loggedSelected.length > 0 && (
-                <p className="movie-status movie-error">
-                  {loggedSelected.length} of these {loggedSelected.length === 1 ? 'is' : 'are'} already
-                  logged. Saving replaces {loggedSelected.length === 1 ? 'its log' : 'their logs'}.
+                  Tick a song to open its entry box. Each song is saved on its own.
                 </p>
               )}
 
-              {mode === 'album' ? (
+              {mode === 'album' && (
                 <>
                   <LogForm
-                    key="album"
                     item={details}
                     log={albumLog}
+                    formLabel="Log for the whole album"
                     onSaved={setAlbumLog}
                     onLogSubmitted={onLogSubmitted}
                   />
                   <ShelfPicker item={details} log={albumLog} onLogChanged={setAlbumLog} />
                 </>
-              ) : (
-                <LogForm
-                  key={singleSongLog ? `song-${singleSongLog.id}` : 'songs'}
-                  item={details}
-                  log={singleSongLog}
-                  onSaved={() => {}}
-                  onLogSubmitted={onLogSubmitted}
-                  saveLog={saveSongs}
-                  clearLog={singleSongLog ? clearSong : undefined}
-                  blockedMessage={selectedTracks.length === 0 ? 'Choose at least one song to log.' : null}
-                />
               )}
             </>
           )}

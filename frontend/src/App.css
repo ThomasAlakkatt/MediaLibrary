@@ -1414,3 +1414,16 @@ label.track-content {
 .shelf-items + .pagination {
   padding-top: 24px;
 }
+
+.track-row--open {
+  outline: 2px solid var(--green-600);
+}
+
+.track-entry {
+  border-top: 1px solid var(--border);
+  padding: 14px;
+}
+
+.track-entry .log-form {
+  margin-bottom: 0;
+}

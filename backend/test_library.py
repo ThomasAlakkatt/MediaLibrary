@@ -657,8 +657,13 @@ ALBUM = {"title": "OK Computer", "artists": "Radiohead", "year": "1997", "poster
 TRACKS = [{"track_index": 0, "title": "Airbag"}, {"track_index": 6, "title": "Karma Police"}]
 
 
+# Each song saves on its own, the way the album page does it.
 def save_songs(client, tracks=TRACKS, **log):
-    return client.put("/library/album/21491/songs", json={**ALBUM, "tracks": tracks, **log})
+    for track in tracks:
+        body = {**ALBUM, "title": track["title"], "album_title": ALBUM["title"], **log}
+        response = client.put(f"/library/song/21491/{track['track_index']}", json=body)
+        assert response.status_code == 200
+    return client.get("/library/album/21491/songs")
 
 
 def test_an_album_is_logged_like_a_movie(client):
@@ -735,19 +740,22 @@ def test_album_songs_are_only_that_albums(client):
     assert client.get("/library/album/999/songs").json() == []
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"tracks": []},
-        {"tracks": [{"track_index": -1, "title": "x"}]},
-        {"tracks": [{"track_index": 0, "title": ""}]},
-        {"tracks": TRACKS, "rating": 11},
-        {"tracks": TRACKS, "rating": 7.333},
-    ],
-)
-def test_invalid_song_logs_are_rejected_and_store_nothing(client, body):
-    assert client.put("/library/album/21491/songs", json={**ALBUM, **body}).status_code == 422
+@pytest.mark.parametrize("rating", [11, 7.333, -1])
+def test_invalid_song_ratings_are_rejected_and_store_nothing(client, rating):
+    body = {**ALBUM, "title": "Airbag", "album_title": "OK Computer", "rating": rating}
+    assert client.put("/library/song/21491/0", json=body).status_code == 422
     assert client.get("/library/album/21491/songs").json() == []
+
+
+def test_saving_one_song_leaves_the_others_alone(client):
+    save_songs(client, tracks=TRACKS[:1], rating=9)
+    assert [s["title"] for s in client.get("/library/album/21491/songs").json()] == ["Airbag"]
+    assert client.get("/library/song/21491/6").status_code == 404
+
+
+def test_the_old_save_many_songs_route_is_gone(client):
+    response = client.put("/library/album/21491/songs", json={**ALBUM, "tracks": TRACKS, "rating": 9})
+    assert response.status_code in (404, 405)
 
 
 def test_a_song_log_with_nothing_in_it_keeps_nothing(client):
