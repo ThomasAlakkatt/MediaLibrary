@@ -1677,3 +1677,22 @@ label.track-content {
     max-width: none;
   }
 }
+
+.app-footer {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin-top: 40px;
+  padding: 20px 16px 32px;
+  text-align: center;
+}
+
+.app-footer p {
+  margin: 4px auto;
+  max-width: 640px;
+}
+
+.app-footer a {
+  color: var(--accent-text);
+}

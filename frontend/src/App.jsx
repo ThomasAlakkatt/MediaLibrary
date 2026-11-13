@@ -182,6 +182,21 @@ export default function App() {
           />
         )}
       </main>
+      <footer className="app-footer">
+        <p>
+          This product uses the TMDB API but is not endorsed or certified by TMDB. Data provided
+          by Discogs. Book data from Open Library.
+        </p>
+        <p>
+          <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>
+          {' · '}
+          <a href="https://www.discogs.com/" target="_blank" rel="noopener noreferrer">Discogs</a>
+          {' · '}
+          <a href="https://openlibrary.org/" target="_blank" rel="noopener noreferrer">
+            Open Library
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }

@@ -1,93 +1,89 @@
 # MediaLibrary
 
-An all-in-one logger for books, shows, movies, and music.
+[![Tests](https://github.com/ThomasAlakkatt/MediaLibrary/actions/workflows/tests.yml/badge.svg)](https://github.com/ThomasAlakkatt/MediaLibrary/actions/workflows/tests.yml)
 
-This project is at an early stage and started as a copy of an earlier project, Music2Movies.
+A personal logger for movies, shows, music and books, all in one place. Search everything at once, log what you've watched, listened to or read, and gather any mix of them onto shelves, like playlists.
 
-- **Search:** search movies, shows, music and books together, or filter to one of them. Results show what's already logged.
-- **Movies and shows:** search with the TMDB API, and log a status, rating, review and date finished. Each season of a show can also have its own status and date finished. A rating can be any number from 0 to 10, with up to 2 decimal places.
+It runs on your own computer, and your library stays there in a single SQLite file.
+
+## Features
+
+- **One search for everything:** movies and shows from TMDB, albums from Discogs and books from Open Library, together or filtered to one type. Results show what you've already logged.
+- **Logging:** a status, a rating from 0 to 10 (up to 2 decimal places), a review and the date you finished. Today's date is filled in for you.
+- **Shows and music in detail:** give each season of a show its own status and date, or log a whole album or any of its songs as separate entries.
 - **My Library:** search, filter by type, status and date range, and sort by date finished, release date, status, rating or title.
-- **Shelves:** ordered lists that mix movies, shows, albums and songs, like playlists, and can hold books too. Search your shelves, or search, sort and filter what's on one.
-- **Music:** search with the Discogs API, and log a whole album or any of its songs, each as its own entry.
-- **Books:** search with the Open Library API, which needs no key, and log them the same way.
+- **Shelves:** ordered lists that mix any kind of title. Reorder by dragging or with arrows, and search, sort or filter what's on them.
+- **Comfortable anywhere:** light and dark themes, and a layout that works at phone sizes.
 
-## Your Data
+## Built with
 
-Your library is stored in a SQLite database at `backend/medialibrary.db`, created the first time the backend starts. Git ignores it, so it isn't included in the repo. To back up your library, copy that file while the app is stopped.
+- **Frontend:** React 19, Vite and Vitest
+- **Backend:** Python 3.13, FastAPI and SQLite
+- **Data:** the TMDB, Discogs and Open Library APIs
 
-To use a different database file, set `MEDIALIBRARY_DB` to its path before starting the backend.
+## Getting started
 
-## API Keys
+You'll need Python 3.13, Node.js 20.19 or newer, and free API keys from TMDB and Discogs. Open Library needs no key.
 
-This app requires your own free API credentials from Discogs and TMDB
-
-1. Create a `backend/.env` file with the following variables:
+1. **Clone the repo:**
    ```
-   DISCOGS_API_KEY=your_discogs_personal_access_token
-   DISCOGS_USER_AGENT=your_app_name/1.0
-   TMDB_API_READ_ACCESS_TOKEN=your_tmdb_read_access_token
+   git clone https://github.com/ThomasAlakkatt/MediaLibrary.git
+   cd MediaLibrary
    ```
-2. Get a Discogs token: log into [Discogs](https://www.discogs.com/), go to Settings > Developers, and generate a personal access token. `DISCOGS_USER_AGENT` can be any identifying string (e.g. `MediaLibrary/1.0`) — Discogs requires one on every request.
-3. Get a TMDB token: create a free account at [TMDB](https://www.themoviedb.org/), go to Settings > API, and copy the "API Read Access Token" (not the shorter API Key).
-
-Without these, the backend will start but every search/recommendation request will fail with an error.
-
-## Running the App
-
-1. Create a virtual environment with Python 3.13 and install backend dependencies (from `backend/`):
+2. **Add your API keys:** copy `backend/.env.example` to `backend/.env`, then fill it in.
+   - **TMDB:** create a free account at [themoviedb.org](https://www.themoviedb.org/), go to Settings > API, and copy the **API Read Access Token** (the long one, not the API Key).
+   - **Discogs:** log into [discogs.com](https://www.discogs.com/), go to Settings > Developers, and generate a personal access token.
+3. **Set up the backend** (from `backend/`):
    ```
    python3.13 -m venv venv
    venv/bin/pip install -r requirements.txt
    ```
-2. Install root dependencies (from the project root): `npm install`
-3. Install frontend dependencies (from `frontend/`): `npm install`
-4. Start both the frontend and backend together (from the project root): `npm run dev`
+4. **Set up the frontend** (from the project root, then `frontend/`):
+   ```
+   npm install
+   cd frontend && npm install
+   ```
+5. **Start both** (from the project root): `npm run dev`
 
-The frontend runs at `http://localhost:3000` and the backend at `http://localhost:8000`.
+Then open [http://localhost:3000](http://localhost:3000). The backend runs at `http://localhost:8000`.
 
-## Backend Tests
+## Your data
 
-From `backend/`, install the test tools and run the tests. They use a temporary database, so they never touch your library.
+Your library is saved in `backend/medialibrary.db`, created the first time the backend starts. Git ignores it, so it's never committed. To back it up, copy that file while the app is stopped. To keep it somewhere else, set `MEDIALIBRARY_DB` in `backend/.env`.
 
-```
-venv/bin/pip install -r requirements-dev.txt
-venv/bin/python -m pytest
-```
+When an update changes how the library is stored, the app upgrades it automatically and keeps a copy of the old file next to it, named like `medialibrary.db-before-…`.
 
-## Frontend Commands
+## Security
 
-Run these from `frontend/`:
+MediaLibrary has no login, so anyone who can reach it can read and change your library. It's built to run only on your own computer:
 
-- `npm start`: start the Vite dev server
-- `npm run build`: build for production into `frontend/dist`
-- `npm test`: run tests with Vitest
-- `npm run lint`: check the code with ESLint
+- Both servers only listen on `localhost`.
+- The backend refuses requests addressed to any other host, and only accepts requests from the app itself.
+- Don't expose it to the internet, through port forwarding or a public tunnel for example, without adding authentication first.
 
-## Frontend Packages
+Keep `backend/.env` private: it holds your API keys and is ignored by git.
 
-- axios
-- react
-- react-dom
+## Running the tests
 
-### Development
+The tests fake every outside service, so they don't need API keys and never touch your library.
 
-- @eslint/js
-- @testing-library/dom
-- @testing-library/jest-dom
-- @testing-library/react
-- @testing-library/user-event
-- @vitejs/plugin-react
-- eslint
-- eslint-plugin-react-hooks
-- globals
-- jsdom
-- vite
-- vitest
+- **Backend** (from `backend/`):
+  ```
+  venv/bin/pip install -r requirements-dev.txt
+  venv/bin/python -m pytest
+  ```
+- **Frontend** (from `frontend/`): `npm test`, plus `npm run lint` and `npm run build`
 
-## Backend Packages
+GitHub Actions runs both on every push.
 
-- fastapi
-- python-dotenv
-- python3-discogs-client
-- requests
-- uvicorn
+## Credits
+
+This product uses the TMDB API but is not endorsed or certified by TMDB. Movie and show data and images come from [TMDB](https://www.themoviedb.org/).
+
+Music data provided by [Discogs](https://www.discogs.com/). Book data and covers come from [Open Library](https://openlibrary.org/).
+
+MediaLibrary started as a copy of an earlier project of mine, Music2Movies.
+
+## License
+
+[MIT](LICENSE)

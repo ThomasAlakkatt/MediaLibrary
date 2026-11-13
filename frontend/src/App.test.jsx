@@ -2710,6 +2710,14 @@ describe('date range in My Library', () => {
   });
 });
 
+test('the footer credits the data sources', () => {
+  render(<App />);
+  const footer = screen.getByRole('contentinfo');
+  expect(footer).toHaveTextContent('This product uses the TMDB API but is not endorsed or certified by TMDB.');
+  expect(footer).toHaveTextContent('Data provided by Discogs.');
+  expect(within(footer).getByRole('link', { name: 'Discogs' })).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
 test('My Library lists logged titles with my rating', async () => {
   setRoutes({ library: [libraryItem({ status: 'finished', rating: 8.5 })] });
   render(<App />);
