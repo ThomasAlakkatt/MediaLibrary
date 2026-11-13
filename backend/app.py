@@ -29,6 +29,7 @@ from tmdb_service import ShowNotFound, TMDBUnavailable, get_show_details, search
 # CORS is needed so that when I run my frontend and FastAPI on localhost from two different origins. CORS allows the frontend to make
 # these API calls to my app.py file
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 
 @asynccontextmanager
@@ -38,6 +39,13 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Only answers requests addressed to this computer. Without this, a malicious website could point its own
+# domain at 127.0.0.1 (DNS rebinding) and read or change the library while the app is running. testserver
+# is the address the automated tests use.
+app.add_middleware(
+    TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"]
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -136,23 +144,26 @@ Status = Literal["want", "in_progress", "finished"]
 Rating = Annotated[Optional[float], AfterValidator(_validate_rating)]
 OptionalText = Annotated[Optional[str], AfterValidator(_blank_to_none)]
 ShelfName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+# Generous limits, so nothing realistic is refused but an oversized request can't fill the database.
+ShortText = Annotated[Optional[str], StringConstraints(max_length=500)]
+LongText = Annotated[Optional[str], StringConstraints(max_length=20000)]
 
 
 # The TMDB details stored with a title, so the library can be shown without calling TMDB.
 class TitleDetails(BaseModel):
-    title: str = Field(min_length=1)
-    creators: Optional[str] = None
-    album_title: Optional[str] = None
-    year: Optional[str] = None
-    release_date: Optional[str] = None
-    poster_path: Optional[str] = None
-    overview: Optional[str] = None
+    title: str = Field(min_length=1, max_length=500)
+    creators: ShortText = None
+    album_title: ShortText = None
+    year: Optional[str] = Field(None, max_length=10)
+    release_date: Optional[str] = Field(None, max_length=20)
+    poster_path: ShortText = None
+    overview: LongText = None
 
 
 class LogRequest(TitleDetails):
     status: Optional[Status] = None
     rating: Rating = None
-    review: OptionalText = None
+    review: Annotated[OptionalText, StringConstraints(max_length=20000)] = None
     finished_on: Optional[date] = None
 
 
@@ -169,11 +180,11 @@ class ShelfItemRequest(TitleDetails):
 
 class ShelfRequest(BaseModel):
     name: ShelfName
-    description: OptionalText = None
+    description: Annotated[OptionalText, StringConstraints(max_length=2000)] = None
 
 
 class ShelfOrderRequest(BaseModel):
-    item_ids: list[int]
+    item_ids: list[int] = Field(max_length=100000)
 
 
 def _split_details(body, log_fields):

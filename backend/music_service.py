@@ -18,9 +18,10 @@ from discogs_client.exceptions import DiscogsAPIError, HTTPError
 # Loads the env file in
 load_dotenv()
 
-# These two lines load my private, unique user token and user agent into variables
+# These two lines load my private, unique user token and user agent into variables. Discogs needs a user
+# agent on every request, so one is filled in if it isn't set.
 my_user_token = os.getenv("DISCOGS_API_KEY")
-my_user_agent = os.getenv("DISCOGS_USER_AGENT")
+my_user_agent = os.getenv("DISCOGS_USER_AGENT") or "MediaLibrary/1.0"
 
 # This is an object authenticated with my user agent and token that allows me to make calls to the Discogs API!
 client = discogs_client.Client(user_agent=my_user_agent, user_token=my_user_token)
@@ -29,6 +30,15 @@ client = discogs_client.Client(user_agent=my_user_agent, user_token=my_user_toke
 # exponential backoff, which can hang a request for minutes with no feedback. We'd rather fail fast
 # and surface a clear error to the user instead.
 client.backoff_enabled = False
+
+
+# The Discogs library sends the token in the request address, and network errors repeat that address, so
+# it's removed from anything printed.
+def _safe_error(error):
+    text = str(error)
+    if my_user_token:
+        text = text.replace(my_user_token, "[hidden]")
+    return re.sub(r"token=[^&\s'\"]+", "token=[hidden]", text)
 
 
 # These let app.py tell the different failures apart and return the right HTTP status for each.
@@ -60,14 +70,14 @@ def get_album(master_id):
         master.refresh()
         data = master.data
     except HTTPError as e:
-        print(f"Discogs API Error {e}")
+        print(f"Discogs API Error {_safe_error(e)}")
         if e.status_code == 404:
             raise ReleaseNotFound() from e
         if e.status_code == 429:
             raise DiscogsRateLimited() from e
         raise DiscogsUnavailable() from e
     except Exception as e:
-        print(f"Internal Error {e}")
+        print(f"Internal Error {_safe_error(e)}")
         raise DiscogsUnavailable() from e
 
     # A tracklist can also hold section headings, like the "Eeny" and "Meeny" sides of OK Computer. A
@@ -347,7 +357,7 @@ def _search_masters(query, fields, number_of_results, page_number, most_owned_fi
         search_results.per_page = number_of_results
         page_results = search_results.page(page_number)
     except HTTPError as e:
-        print(f"Discogs API Error {e}")
+        print(f"Discogs API Error {_safe_error(e)}")
         # Discogs answers 404 when asked for a page past the last one
         if e.status_code == 404:
             return []
@@ -355,7 +365,7 @@ def _search_masters(query, fields, number_of_results, page_number, most_owned_fi
             raise DiscogsRateLimited() from e
         raise DiscogsUnavailable() from e
     except Exception as e:
-        print(f"Internal Error {e}")
+        print(f"Internal Error {_safe_error(e)}")
         raise DiscogsUnavailable() from e
 
     # We will be returning the output from the search API as a list of dictionaries, with the entries containing the information
@@ -379,7 +389,7 @@ def _search_masters(query, fields, number_of_results, page_number, most_owned_fi
             search_dict["cover_image"] = release.data.get("cover_image")
             search_list.append(search_dict)
         except DiscogsAPIError as e:
-            print(f"Skipping release {release.id}: {e}")
+            print(f"Skipping release {release.id}: {_safe_error(e)}")
             continue
 
     return search_list
